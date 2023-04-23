@@ -103,22 +103,6 @@ impl DataType {
         TypeId::of::<T>() == self.supported_type_id()
     }
 }
-// Header:1 ends here
-
-// [[file:../wills-columnar-format.org::*Header][Header:2]]
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub enum DataType {
-    I64 = 0,
-    String = 1,
-}
-
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub struct Header {
-    pub data_type: DataType,
-    pub is_rle: bool,
-    pub elements: usize,
-    pub data_size: usize,
-}
 
 impl Header {
     fn encode(&self) -> Vec<u8> {
@@ -128,6 +112,22 @@ impl Header {
     fn decode(r: &mut impl std::io::Read) -> Header {
         bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
     }
+}
+// Header:1 ends here
+
+// [[file:../wills-columnar-format.org::*Header][Header:2]]
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+pub struct Header {
+    pub data_type: DataType,
+    pub is_rle: bool,
+    pub elements: usize,
+    pub data_size: usize,
+}
+
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum DataType {
+    I64 = 0,
+    String = 1,
 }
 // Header:2 ends here
 

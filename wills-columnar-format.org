@@ -5,14 +5,14 @@
 
 * Introduction
 
-Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It
+[[https://wmedrano.dev/living-programs/wills-columnar-format][Will's columnar format]] is a columnar format made by will.s.medrano@gmail.com. It
 is primarily implemented for educational purposes. If you are interested in
 using a well supported columnar format, consider using [[https://parquet.apache.org/][Apache Parquet]].
 
 ** Conventions
 
 The following conventions are used:
-- All structs are encoded using =bincode=. =bincode= is a binary
+- All structs are encoded using [[https://github.com/bincode-org/bincode][Bincode]]. =bincode= is a binary
   encoding/decoding scheme implemented in Rust.
 - Source code snippets are presented for relatively high level constructs. Lower
   level details may be omitted from presentation.
@@ -21,7 +21,7 @@ The following conventions are used:
 
 ** V0 Features
 
-V0 is implemented but still requires verification, testing, and benchmarking.
+V0 is implemented but still requires verification, testing, and bench-marking.
 
 Supports:
 - Only a single column per encode/decode.
@@ -158,23 +158,6 @@ The header contains an encoded struct:
           TypeId::of::<T>() == self.supported_type_id()
       }
   }
-#+END_SRC
-
-
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
-  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-  pub enum DataType {
-      I64 = 0,
-      String = 1,
-  }
-
-  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-  pub struct Header {
-      pub data_type: DataType,
-      pub is_rle: bool,
-      pub elements: usize,
-      pub data_size: usize,
-  }
 
   impl Header {
       fn encode(&self) -> Vec<u8> {
@@ -184,6 +167,23 @@ The header contains an encoded struct:
       fn decode(r: &mut impl std::io::Read) -> Header {
           bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
       }
+  }
+#+END_SRC
+
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub struct Header {
+      pub data_type: DataType,
+      pub is_rle: bool,
+      pub elements: usize,
+      pub data_size: usize,
+  }
+
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub enum DataType {
+      I64 = 0,
+      String = 1,
   }
 #+END_SRC
 
@@ -197,6 +197,9 @@ standard =bincode= package for all data types.
 [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values. For RLE, the
 data is encoded as a tuple of ~(u16, T)~ where the first item contains the run
 length and the second contains the element.
+
+TODO: Refactor type from ~(u16, T)~ to something cleaner like a new custom type,
+~RleElement<T>~.
 
 #+BEGIN_SRC rust :tangle src/lib.rs :comments link
   fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<(u16, T)> {
@@ -238,4 +241,6 @@ out of scope for V0.
 
 * Source Code
 
-[[https://github.com/wmedrano/wills-columnar-format]]
+The source code is stored at
+[[https://github.com/wmedrano/wills-columnar-format]]. The main source file is
+=wills-columnar-format.org= which is used to generate the =src/lib.rs=.
