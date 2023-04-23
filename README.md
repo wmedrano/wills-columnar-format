@@ -1,25 +1,26 @@
-- [Introduction](#org444833b)
-  - [Conventions](#orgb007b95)
-- [API](#org9556ce4)
-  - [V0 Features](#org4babdc8)
-  - [Encoding](#org82f5bbe)
-  - [Decoding](#org767ad18)
-- [Format Specification](#orge0957e0)
-  - [Header](#org141d738)
-  - [Data](#org1cd4a04)
-    - [RLE](#org61cb287)
-    - [Dictionary Encoding](#org11f27b1)
+- [Introduction](#orgd5f1adb)
+  - [Conventions](#org84accef)
+- [API](#orgca0e12e)
+  - [V0 Features](#org0aba4ba)
+  - [Encoding](#org24748f6)
+  - [Decoding](#org93a7602)
+- [Format Specification](#org67f78f5)
+  - [Header](#orgeb9cf54)
+  - [Data](#orgba44769)
+    - [RLE](#orgae53380)
+    - [Dictionary Encoding](#org497d3b5)
+- [Source Code](#orga5f5571)
 
 
 
-<a id="org444833b"></a>
+<a id="orgd5f1adb"></a>
 
 # Introduction
 
-Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It is primarily a research project. If you are interested in using a well supported columnar format, consider using [Apache Parquet](https://parquet.apache.org/).
+Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It is primarily implemented for educational purposes. If you are interested in using a well supported columnar format, consider using [Apache Parquet](https://parquet.apache.org/).
 
 
-<a id="orgb007b95"></a>
+<a id="org84accef"></a>
 
 ## Conventions
 
@@ -29,14 +30,16 @@ The following conventions are used:
 -   Source code snippets are presented for relatively high level constructs. Lower level details may be omitted from presentation.
 
 
-<a id="org9556ce4"></a>
+<a id="orgca0e12e"></a>
 
 # API
 
 
-<a id="org4babdc8"></a>
+<a id="org0aba4ba"></a>
 
 ## V0 Features
+
+V0 is implemented but still requires verification, testing, and benchmarking.
 
 Supports:
 
@@ -45,7 +48,7 @@ Supports:
 -   Run length encoding.
 
 
-<a id="org82f5bbe"></a>
+<a id="org24748f6"></a>
 
 ## Encoding
 
@@ -62,7 +65,7 @@ where
 ```
 
 
-<a id="org767ad18"></a>
+<a id="org93a7602"></a>
 
 ## Decoding
 
@@ -79,7 +82,7 @@ where
 ```
 
 
-<a id="orge0957e0"></a>
+<a id="org67f78f5"></a>
 
 # Format Specification
 
@@ -88,7 +91,7 @@ where
 -   `data` - The data.
 
 
-<a id="org141d738"></a>
+<a id="orgeb9cf54"></a>
 
 ## Header
 
@@ -121,14 +124,14 @@ impl Header {
 ```
 
 
-<a id="org1cd4a04"></a>
+<a id="orgba44769"></a>
 
 ## Data
 
 The data consists of a sequence of encoded data. Encoding happens using the standard `bincode` package for all data types.
 
 
-<a id="org61cb287"></a>
+<a id="orgae53380"></a>
 
 ### RLE
 
@@ -168,8 +171,15 @@ fn rle_decode_data<'a, T: 'static>(
 ```
 
 
-<a id="org11f27b1"></a>
+<a id="org497d3b5"></a>
 
 ### TODO Dictionary Encoding
 
-Dictionary encoding is useful for string columns with few unique values.
+Dictionary encoding is useful for string columns with few unique values. This is out of scope for V0.
+
+
+<a id="orga5f5571"></a>
+
+# Source Code
+
+<https://github.com/wmedrano/wills-columnar-format>

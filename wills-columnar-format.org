@@ -6,8 +6,8 @@
 * Introduction
 
 Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It
-is primarily a research project. If you are interested in using a well supported
-columnar format, consider using [[https://parquet.apache.org/][Apache Parquet]].
+is primarily implemented for educational purposes. If you are interested in
+using a well supported columnar format, consider using [[https://parquet.apache.org/][Apache Parquet]].
 
 ** Conventions
 
@@ -20,6 +20,8 @@ The following conventions are used:
 * API
 
 ** V0 Features
+
+V0 is implemented but still requires verification, testing, and benchmarking.
 
 Supports:
 - Only a single column per encode/decode.
@@ -231,4 +233,9 @@ length and the second contains the element.
 
 *** TODO Dictionary Encoding
 
-Dictionary encoding is useful for string columns with few unique values.
+Dictionary encoding is useful for string columns with few unique values. This is
+out of scope for V0.
+
+* Source Code
+
+[[https://github.com/wmedrano/wills-columnar-format]]
