@@ -1,45 +1,45 @@
-- [Introduction](#orgd5f1adb)
-  - [Conventions](#org84accef)
-- [API](#orgca0e12e)
-  - [V0 Features](#org0aba4ba)
-  - [Encoding](#org24748f6)
-  - [Decoding](#org93a7602)
-- [Format Specification](#org67f78f5)
-  - [Header](#orgeb9cf54)
-  - [Data](#orgba44769)
-    - [RLE](#orgae53380)
-    - [Dictionary Encoding](#org497d3b5)
-- [Source Code](#orga5f5571)
+- [Introduction](#org9dddb4b)
+  - [Conventions](#org5b870de)
+- [API](#orgcdbc1f4)
+  - [V0 Features](#org9ae0653)
+  - [V1 Features Brainstorm](#orgdc63f79)
+  - [Encoding](#orgd5b0f5c)
+  - [Decoding](#org547a809)
+- [Format Specification](#orgd5a7138)
+  - [Header](#orgb6486aa)
+  - [Data](#orgb02faf5)
+    - [RLE](#org6b23078)
+- [Source Code](#org328710f)
 
 
 
-<a id="orgd5f1adb"></a>
+<a id="org9dddb4b"></a>
 
 # Introduction
 
-Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It is primarily implemented for educational purposes. If you are interested in using a well supported columnar format, consider using [Apache Parquet](https://parquet.apache.org/).
+[Will's columnar format](https://wmedrano.dev/living-programs/wills-columnar-format) is a columnar format made by will.s.medrano@gmail.com. It is primarily implemented for educational purposes. If you are interested in using a well supported columnar format, consider using [Apache Parquet](https://parquet.apache.org/).
 
 
-<a id="org84accef"></a>
+<a id="org5b870de"></a>
 
 ## Conventions
 
 The following conventions are used:
 
--   All structs are encoded using `bincode`. `bincode` is a binary encoding/decoding scheme implemented in Rust.
+-   All structs are encoded using [Bincode](https://github.com/bincode-org/bincode). Bincode is a binary encoding/decoding scheme implemented in Rust.
 -   Source code snippets are presented for relatively high level constructs. Lower level details may be omitted from presentation.
 
 
-<a id="orgca0e12e"></a>
+<a id="orgcdbc1f4"></a>
 
 # API
 
 
-<a id="org0aba4ba"></a>
+<a id="org9ae0653"></a>
 
 ## V0 Features
 
-V0 is implemented but still requires verification, testing, and benchmarking.
+V0 is roughly implemented but still requires verification, testing, error handling, and bench-marking.
 
 Supports:
 
@@ -48,7 +48,18 @@ Supports:
 -   Run length encoding.
 
 
-<a id="org24748f6"></a>
+<a id="orgdc63f79"></a>
+
+## V1 Features Brainstorm
+
+-   Dictionary encoding for better string compression.
+-   Compression (like zstd or snappy) for data.
+-   Multiple columns.
+-   Push down filtering.
+-   Split column data into blocks. Required by push down filtering.
+
+
+<a id="orgd5b0f5c"></a>
 
 ## Encoding
 
@@ -65,11 +76,11 @@ where
 ```
 
 
-<a id="org93a7602"></a>
+<a id="org547a809"></a>
 
 ## Decoding
 
-`decode_column` decodes data from a `Read` stream into a `Vec<T>`.
+`decode_column` decodes data from a byte stream into a `Vec<T>`.
 
 TODO: Decoding should return an iterator of `(element_count, element)` to support efficient reads of run-length-encoded data.
 
@@ -82,28 +93,22 @@ where
 ```
 
 
-<a id="org67f78f5"></a>
+<a id="orgd5a7138"></a>
 
 # Format Specification
 
--   `magic-string` - A magic string of "wmedrano0".
+-   `magic-bytes` - The magic bytes are "wmedrano0".
 -   `header` - The header.
 -   `data` - The data.
 
 
-<a id="orgeb9cf54"></a>
+<a id="orgb6486aa"></a>
 
 ## Header
 
 The header contains an encoded struct:
 
 ```rust
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub enum DataType {
-    I64 = 0,
-    String = 1,
-}
-
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Header {
     pub data_type: DataType,
@@ -112,30 +117,28 @@ pub struct Header {
     pub data_size: usize,
 }
 
-impl Header {
-    fn encode(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, Self::CONFIGURATION).unwrap()
-    }
-
-    fn decode(r: &mut impl std::io::Read) -> Header {
-        bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
-    }
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum DataType {
+    I64 = 0,
+    String = 1,
 }
 ```
 
 
-<a id="orgba44769"></a>
+<a id="orgb02faf5"></a>
 
 ## Data
 
 The data consists of a sequence of encoded data. Encoding happens using the standard `bincode` package for all data types.
 
 
-<a id="orgae53380"></a>
+<a id="org6b23078"></a>
 
 ### RLE
 
 [Run length encoding](https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.) is a compression technique for repeated values. For RLE, the data is encoded as a tuple of `(u16, T)` where the first item contains the run length and the second contains the element.
+
+TODO: Refactor type from `(u16, T)` to something cleaner like a new custom type, `RleElement<T>`.
 
 ```rust
 fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<(u16, T)> {
@@ -171,15 +174,8 @@ fn rle_decode_data<'a, T: 'static>(
 ```
 
 
-<a id="org497d3b5"></a>
-
-### TODO Dictionary Encoding
-
-Dictionary encoding is useful for string columns with few unique values. This is out of scope for V0.
-
-
-<a id="orga5f5571"></a>
+<a id="org328710f"></a>
 
 # Source Code
 
-<https://github.com/wmedrano/wills-columnar-format>
+The source code is stored at <https://github.com/wmedrano/wills-columnar-format>. The main source file is `wills-columnar-format.org` which is used to generate the `src/lib.rs`.

@@ -1,7 +1,8 @@
 // [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
-    T: 'static + bincode::Encode + Eq {
+    T: 'static + bincode::Encode + Eq,
+{
     encode_column_impl(data, use_rle)
 }
 // Encoding:1 ends here
@@ -9,7 +10,8 @@ where
 // [[file:../wills-columnar-format.org::*Decoding][Decoding:1]]
 pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
 where
-    T: 'static + Clone + bincode::Decode {
+    T: 'static + Clone + bincode::Decode,
+{
     decode_column_impl(r)
 }
 // Decoding:1 ends here
@@ -28,7 +30,7 @@ fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: 
     } else {
         bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
     };
-    let header = Header{
+    let header = Header {
         data_type: DataType::from_type::<T>().unwrap(),
         is_rle: use_rle,
         elements,
@@ -84,18 +86,17 @@ impl Header {
 }
 
 impl DataType {
-    const ALL_DATA_TYPE: [DataType; 2] = [
-        DataType::I64,
-        DataType::String,
-    ];
+    const ALL_DATA_TYPE: [DataType; 2] = [DataType::I64, DataType::String];
     fn from_type<T: 'static>() -> Option<DataType> {
-        DataType::ALL_DATA_TYPE.into_iter().find(|dt| dt.is_supported::<T>())
+        DataType::ALL_DATA_TYPE
+            .into_iter()
+            .find(|dt| dt.is_supported::<T>())
     }
 
     fn supported_type_id(&self) -> TypeId {
         match self {
-           DataType::I64 => TypeId::of::<i64>(),
-           DataType::String => TypeId::of::<String>(),
+            DataType::I64 => TypeId::of::<i64>(),
+            DataType::String => TypeId::of::<String>(),
         }
     }
 
