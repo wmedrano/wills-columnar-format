@@ -19,7 +19,7 @@ where
 
 // ~decode_column~ decodes data from a byte stream into a ~Vec<T>~.
 
-// TODO: Decoding should return an iterator of ~RleElement<T>~ to support efficient
+// TODO: Decoding should return an iterator of ~rle::Element<T>~ to support efficient
 // reads of run-length-encoded data.
 
 
@@ -39,14 +39,14 @@ where
 mod test_lib;
 // Tests:1 ends here
 
-// Format Specification
+// Format Overview
 
-// - =magic-bytes= - The magic bytes are "wmedrano0".
+// - =magic-bytes= - The magic bytes are 9 bytes long with the contents being "wmedrano0".
 // - =header= - The header contains metadata about the column.
 // - =data= - The encoded column data.
 
 
-// [[file:../wills-columnar-format.org::*Format Specification][Format Specification:1]]
+// [[file:../wills-columnar-format.org::*Format Overview][Format Overview:1]]
 const MAGIC_BYTES_LEN: usize = 9;
 const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
 const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
@@ -54,7 +54,7 @@ const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::sta
 fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
     let elements = data.len();
     let encoded_data = if use_rle {
-        let rle_data = rle_encode_data(data.into_iter());
+        let rle_data = rle::encode_data(data.into_iter());
         bincode::encode_to_vec(rle_data, BINCODE_DATA_CONFIG).unwrap()
     } else {
         bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
@@ -88,10 +88,10 @@ fn decode_column_impl<T: 'static + Clone + bincode::Decode>(r: &mut impl std::io
         std::any::type_name::<T>(),
     );
     if header.is_rle {
-        let rle_elements: Vec<RleElement<T>> =
+        let rle_elements: Vec<rle::Element<T>> =
             bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
         vec_from_iter_with_hint(
-            rle_decode_data(rle_elements.iter()).cloned(),
+            rle::decode_data(rle_elements.iter()).cloned(),
             header.elements,
         )
     } else {
@@ -104,11 +104,11 @@ fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) ->
     ret.extend(iter);
     ret
 }
-// Format Specification:1 ends here
+// Format Overview:1 ends here
 
 // Header
 
-// The header contains an encoded struct:
+// The header contains a Bincode V2 encoded struct:
 
 
 // [[file:../wills-columnar-format.org::*Header][Header:1]]
@@ -121,22 +121,32 @@ impl Header {
 
 impl DataType {
     const ALL_DATA_TYPE: [DataType; 2] = [
-        DataType::I64,
+        DataType::Integer,
         DataType::String,
     ];
+
     fn from_type<T: 'static>() -> Option<DataType> {
         DataType::ALL_DATA_TYPE.into_iter().find(|dt| dt.is_supported::<T>())
     }
 
-    fn supported_type_id(&self) -> TypeId {
-        match self {
-           DataType::I64 => TypeId::of::<i64>(),
-           DataType::String => TypeId::of::<String>(),
-        }
-    }
-
     fn is_supported<T: 'static>(&self) -> bool {
-        TypeId::of::<T>() == self.supported_type_id()
+        let type_id = TypeId::of::<T>();
+        match self {
+            DataType::Integer => [
+                TypeId::of::<i8>(),
+                TypeId::of::<u8>(),
+                TypeId::of::<i16>(),
+                TypeId::of::<u16>(),
+                TypeId::of::<i32>(),
+                TypeId::of::<u32>(),
+                TypeId::of::<u64>(),
+                TypeId::of::<i64>(),
+            ].contains(&type_id),
+            DataType::String => [
+                TypeId::of::<String>(),
+                TypeId::of::<&'static str>(),
+            ].contains(&type_id),
+        }
     }
 }
 
@@ -162,12 +172,12 @@ pub struct Header {
 
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum DataType {
-    I64 = 0,
+    Integer = 0,
     String = 1,
 }
 // Header:2 ends here
 
-// RLE
+// Run Length Encoding
 
 // [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
 
@@ -176,43 +186,14 @@ pub enum DataType {
 // of type ~(run_length, element)~.
 
 
-// [[file:../wills-columnar-format.org::*RLE][RLE:1]]
-#[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
-pub struct RleElement<T> {
-    // Run length is stored as a u64. We could try using a smaller datatype,
-    // but Bincode uses "variable length encoding" for integers which is
-    // efficient for smaller sizes.
-    pub run_length: u64,
-    pub element: T,
-}
+// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:1]]
+pub mod rle;
+// Run Length Encoding:1 ends here
 
-fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<RleElement<T>> {
-    let mut data = data;
-    let mut rle = match data.next() {
-        Some(e) => RleElement{run_length: 1, element: e},
-        None => return Vec::new(),
-    };
+// Tests
 
-    let mut ret = Vec::new();
-    for element in data {
-        if element != rle.element || rle.run_length == u64::MAX {
-            ret.push(std::mem::replace(&mut rle, RleElement{run_length: 1, element}));
-        } else {
-            rle.run_length += 1;
-        }
-    }
-    if rle.run_length > 0 {
-        ret.push(rle);
-    }
-    ret
-}
 
-fn rle_decode_data<'a, T: 'static>(
-    iter: impl 'a + Iterator<Item = &'a RleElement<T>>,
-) -> impl Iterator<Item = &'a T> {
-    iter.flat_map(move |rle| {
-        let run_length = rle.run_length as usize;
-        std::iter::repeat(&rle.element).take(run_length)
-    })
-}
-// RLE:1 ends here
+// [[file:../wills-columnar-format.org::*Tests][Tests:1]]
+#[cfg(test)]
+mod test_rle;
+// Tests:1 ends here
