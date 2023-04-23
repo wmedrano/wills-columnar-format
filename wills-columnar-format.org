@@ -46,7 +46,7 @@ true, then run length encoding will be used.
 TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 =AUTO=.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both
   pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
   where
       T: 'static + bincode::Encode + Eq {
@@ -61,7 +61,7 @@ TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 TODO: Decoding should return an iterator of ~RleElement<T>~ to support efficient
 reads of run-length-encoded data.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both
   pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
   where
       T: 'static + Clone + bincode::Decode {
@@ -71,16 +71,16 @@ reads of run-length-encoded data.
 
 ** Tests
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link :exports none
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both :exports none
   #[cfg(test)]
   mod test_lib;
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link :exports none
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both :exports none
   use super::*;
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_header_contains_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
@@ -89,7 +89,7 @@ reads of run-length-encoded data.
   }
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_i64() {
       let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
@@ -103,7 +103,7 @@ reads of run-length-encoded data.
   }
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_string() {
       let data: Vec<String> = Vec::from_iter([
@@ -124,7 +124,7 @@ reads of run-length-encoded data.
   }
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_string_with_rle() {
       let data: Vec<String> = Vec::from_iter([
@@ -151,7 +151,7 @@ reads of run-length-encoded data.
 - =header= - The header contains metadata about the column.
 - =data= - The encoded column data.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link :exports none
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both :exports none
   const MAGIC_BYTES_LEN: usize = 9;
   const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
   const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
@@ -215,7 +215,7 @@ reads of run-length-encoded data.
 
 The header contains an encoded struct:
 
-#+BEGIN_SRC rust :exports none :tangle src/lib.rs :comments link
+#+BEGIN_SRC rust :exports none :tangle src/lib.rs :comments both
   use bincode::{Decode, Encode};
   use std::any::TypeId;
 
@@ -256,7 +256,7 @@ The header contains an encoded struct:
 #+END_SRC
 
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
   pub struct Header {
       pub data_type: DataType,
@@ -277,19 +277,24 @@ The header contains an encoded struct:
 *** Basic Encoding
 
 The data consists of a sequence of encoded data. Encoding happens using the
-=bincode= package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
+=bincode= v2 package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
+
+Note: Bincode v2 currently in release candidate mode.
 
 *** RLE
 
 [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
 
 For RLE, the data is encoded as a Struct with the run length and the
-element. With Bincode, this is the equivalent of encoding a tuple of type
-~(run_length, element)~.
+element. With Bincode, this is the equivalent (storage wise) of encoding a tuple
+of type ~(run_length, element)~.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+BEGIN_SRC rust :tangle src/lib.rs :comments both
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
   pub struct RleElement<T> {
+      // Run length is stored as a u64. We could try using a smaller datatype,
+      // but Bincode uses "variable length encoding" for integers which is
+      // efficient for smaller sizes.
       pub run_length: u64,
       pub element: T,
   }
@@ -329,4 +334,5 @@ element. With Bincode, this is the equivalent of encoding a tuple of type
 
 The source code is stored at
 [[https://github.com/wmedrano/wills-columnar-format]]. The main source file is
-=wills-columnar-format.org= which is used to generate the =src/lib.rs=.
+=wills-columnar-format.org= which is used to generate the Rust source files like
+=src/lib.rs=.

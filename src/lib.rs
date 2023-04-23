@@ -1,3 +1,12 @@
+// Encoding
+
+// ~encode_column~ encodes a ~Vec<T>~ into Will's Columnar Format. If ~use_rle~ is
+// true, then run length encoding will be used.
+
+// TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
+// =AUTO=.
+
+
 // [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
@@ -5,6 +14,14 @@ where
     encode_column_impl(data, use_rle)
 }
 // Encoding:1 ends here
+
+// Decoding
+
+// ~decode_column~ decodes data from a byte stream into a ~Vec<T>~.
+
+// TODO: Decoding should return an iterator of ~RleElement<T>~ to support efficient
+// reads of run-length-encoded data.
+
 
 // [[file:../wills-columnar-format.org::*Decoding][Decoding:1]]
 pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
@@ -14,10 +31,20 @@ where
 }
 // Decoding:1 ends here
 
+// Tests
+
+
 // [[file:../wills-columnar-format.org::*Tests][Tests:1]]
 #[cfg(test)]
 mod test_lib;
 // Tests:1 ends here
+
+// Format Specification
+
+// - =magic-bytes= - The magic bytes are "wmedrano0".
+// - =header= - The header contains metadata about the column.
+// - =data= - The encoded column data.
+
 
 // [[file:../wills-columnar-format.org::*Format Specification][Format Specification:1]]
 const MAGIC_BYTES_LEN: usize = 9;
@@ -79,6 +106,11 @@ fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) ->
 }
 // Format Specification:1 ends here
 
+// Header
+
+// The header contains an encoded struct:
+
+
 // [[file:../wills-columnar-format.org::*Header][Header:1]]
 use bincode::{Decode, Encode};
 use std::any::TypeId;
@@ -135,9 +167,21 @@ pub enum DataType {
 }
 // Header:2 ends here
 
+// RLE
+
+// [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
+
+// For RLE, the data is encoded as a Struct with the run length and the
+// element. With Bincode, this is the equivalent (storage wise) of encoding a tuple
+// of type ~(run_length, element)~.
+
+
 // [[file:../wills-columnar-format.org::*RLE][RLE:1]]
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
 pub struct RleElement<T> {
+    // Run length is stored as a u64. We could try using a smaller datatype,
+    // but Bincode uses "variable length encoding" for integers which is
+    // efficient for smaller sizes.
     pub run_length: u64,
     pub element: T,
 }
