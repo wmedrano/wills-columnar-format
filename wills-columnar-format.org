@@ -1,0 +1,234 @@
+#+title: Will's Columnar Format
+#+author: Will Medrano
+#+email: will.s.medrano@gmail.com
+#+date: 2023-04-18
+
+* Introduction
+
+Will's columnar format is a columnar format made by will.s.medrano@gmail.com. It
+is primarily a research project. If you are interested in using a well supported
+columnar format, consider using [[https://parquet.apache.org/][Apache Parquet]].
+
+** Conventions
+
+The following conventions are used:
+- All structs are encoded using =bincode=. =bincode= is a binary
+  encoding/decoding scheme implemented in Rust.
+- Source code snippets are presented for relatively high level constructs. Lower
+  level details may be omitted from presentation.
+
+* API
+
+** V0 Features
+
+Supports:
+- Only a single column per encode/decode.
+- ~i64~ and ~String~ types.
+- Run length encoding.
+
+** Encoding
+
+~encode_column~ encodes a ~Vec<T>~ into Will's Columnar Format. If ~use_rle~ is
+true, then run length encoding will be used.
+
+TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
+=AUTO=.
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+  pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
+  where
+      T: 'static + bincode::Encode + Eq {
+      encode_column_impl(data, use_rle)
+  }
+#+END_SRC
+
+** Decoding
+
+~decode_column~ decodes data from a ~Read~ stream into a ~Vec<T>~.
+
+TODO: Decoding should return an iterator of ~(element_count, element)~ to
+support efficient reads of run-length-encoded data.
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+  pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
+  where
+      T: 'static + Clone + bincode::Decode {
+      decode_column_impl(r)
+  }
+#+END_SRC
+
+* Format Specification
+
+- =magic-string= - A magic string of "wmedrano0".
+- =header= - The header.
+- =data= - The data.
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link :exports none
+  const MAGIC_STRING_LEN: usize = 9;
+  const MAGIC_STRING: &[u8; MAGIC_STRING_LEN] = b"wmedrano0";
+  const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
+
+  fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
+      let magic_number = MAGIC_STRING.iter().copied();
+      let elements = data.len();
+      let encoded_data = if use_rle {
+          let rle_data = rle_encode_data(data.into_iter());
+          bincode::encode_to_vec(rle_data, BINCODE_DATA_CONFIG).unwrap()
+      } else {
+          bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
+      };
+      let header = Header{
+          data_type: DataType::from_type::<T>().unwrap(),
+          is_rle: use_rle,
+          elements,
+          data_size: encoded_data.len(),
+      };
+      Vec::from_iter(
+          magic_number
+              .chain(header.encode())
+              .chain(encoded_data.iter().copied()),
+      )
+  }
+
+  fn decode_column_impl<T: 'static + Clone + bincode::Decode>(r: &mut impl std::io::Read) -> Vec<T> {
+      let mut magic_string = [0u8; MAGIC_STRING_LEN];
+      r.read_exact(&mut magic_string).unwrap();
+      assert_eq!(
+          &magic_string, MAGIC_STRING,
+          "Expected magic string {:?}.",
+          MAGIC_STRING
+      );
+      let header = Header::decode(r);
+      assert!(
+          header.data_type.is_supported::<T>(),
+          "Format of expected type {:?} does not support {:?}.",
+          header.data_type,
+          std::any::type_name::<T>(),
+      );
+      if header.is_rle {
+          let rle_elements: Vec<(u16, T)> =
+              bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
+          vec_from_iter_with_hint(
+              rle_decode_data(rle_elements.iter()).cloned(),
+              header.elements,
+          )
+      } else {
+          bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap()
+      }
+  }
+
+  fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) -> Vec<T> {
+      let mut ret = Vec::with_capacity(len_hint);
+      ret.extend(iter);
+      ret
+  }
+#+END_SRC
+
+** Header
+
+The header contains an encoded struct:
+
+#+BEGIN_SRC rust :exports none :tangle src/lib.rs :comments link
+  use bincode::{Decode, Encode};
+  use std::any::TypeId;
+
+  impl Header {
+      const CONFIGURATION: bincode::config::Configuration = bincode::config::standard();
+  }
+
+  impl DataType {
+      const ALL_DATA_TYPE: [DataType; 2] = [
+          DataType::I64,
+          DataType::String,
+      ];
+      fn from_type<T: 'static>() -> Option<DataType> {
+          DataType::ALL_DATA_TYPE.into_iter().find(|dt| dt.is_supported::<T>())
+      }
+
+      fn supported_type_id(&self) -> TypeId {
+          match self {
+             DataType::I64 => TypeId::of::<i64>(),
+             DataType::String => TypeId::of::<String>(),
+          }
+      }
+
+      fn is_supported<T: 'static>(&self) -> bool {
+          TypeId::of::<T>() == self.supported_type_id()
+      }
+  }
+#+END_SRC
+
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub enum DataType {
+      I64 = 0,
+      String = 1,
+  }
+
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub struct Header {
+      pub data_type: DataType,
+      pub is_rle: bool,
+      pub elements: usize,
+      pub data_size: usize,
+  }
+
+  impl Header {
+      fn encode(&self) -> Vec<u8> {
+          bincode::encode_to_vec(self, Self::CONFIGURATION).unwrap()
+      }
+
+      fn decode(r: &mut impl std::io::Read) -> Header {
+          bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
+      }
+  }
+#+END_SRC
+
+** Data
+
+The data consists of a sequence of encoded data. Encoding happens using the
+standard =bincode= package for all data types.
+
+*** RLE
+
+[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values. For RLE, the
+data is encoded as a tuple of ~(u16, T)~ where the first item contains the run
+length and the second contains the element.
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+  fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<(u16, T)> {
+      let mut data = data;
+      let mut element = match data.next() {
+          Some(e) => e,
+          None => return Vec::new(),
+      };
+      let mut count = 1;
+
+      let mut ret = Vec::new();
+      for next_element in data {
+          if next_element != element || count == u16::MAX {
+              ret.push((count, element));
+              (element, count) = (next_element, 1);
+          } else {
+              count += 1;
+          }
+      }
+      if count > 0 {
+          ret.push((count, element));
+      }
+      ret
+  }
+
+  fn rle_decode_data<'a, T: 'static>(
+      iter: impl 'a + Iterator<Item = &'a (u16, T)>,
+  ) -> impl Iterator<Item = &'a T> {
+      iter.flat_map(move |(run_length, element)| {
+          std::iter::repeat(element).take(*run_length as usize)
+      })
+  }
+#+END_SRC
+
+*** TODO Dictionary Encoding
+
+Dictionary encoding is useful for string columns with few unique values.
