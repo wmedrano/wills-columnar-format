@@ -21,21 +21,21 @@ The following conventions are used:
 
 ** V0 Features
 
-V0 is roughly implemented but still requires verification, testing, error
-handling, and bench-marking.
+V0 is roughly implemented but still requires graceful error handling, and
+bench-marking.
 
 Supports:
 - Only a single column per encode/decode.
 - ~i64~ and ~String~ types.
 - Run length encoding.
 
-** V1 Features Brainstorm
+** Tentative V1 Features
 
 - Dictionary encoding for better string compression.
 - Compression (like zstd or snappy) for data.
 - Multiple columns.
 - Push down filtering.
-- Split column data into blocks. Required by push down filtering.
+- Split column data into blocks. Required to implement effective push down filtering.
 
 
 ** Encoding
@@ -58,14 +58,90 @@ TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 
 ~decode_column~ decodes data from a byte stream into a ~Vec<T>~.
 
-TODO: Decoding should return an iterator of ~(element_count, element)~ to
-support efficient reads of run-length-encoded data.
+TODO: Decoding should return an iterator of ~RleElement<T>~ to support efficient
+reads of run-length-encoded data.
 
 #+BEGIN_SRC rust :tangle src/lib.rs :comments link
   pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
   where
       T: 'static + Clone + bincode::Decode {
       decode_column_impl(r)
+  }
+#+END_SRC
+
+** Tests
+
+#+BEGIN_SRC rust :tangle src/lib.rs :comments link :exports none
+  #[cfg(test)]
+  mod test_lib;
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link :exports none
+  use super::*;
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+  #[test]
+  fn test_header_contains_magic_bytes() {
+      let data: Vec<i64> = vec![1, 2, 3, 4];
+      let encoded_data = encode_column(data.clone(), false);
+      assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+  #[test]
+  fn test_encode_decode_i64() {
+      let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
+      let encoded_data = encode_column(data.clone(), false);
+      assert_eq!(encoded_data.len(), 22);
+
+      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      assert_eq!(
+          decode_column::<i64>(&mut encoded_data_cursor),
+          vec![-1, 10, 10, 10, 11, 12, 12, 10]);
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+  #[test]
+  fn test_encode_decode_string() {
+      let data: Vec<String> = Vec::from_iter([
+          "foo",
+          "foo",
+          "foo",
+          "bar",
+          "baz",
+          "foo",
+      ].into_iter().map(String::from));
+      let encoded_data = encode_column(data.clone(), false);
+      assert_eq!(encoded_data.len(), 38);
+
+      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      assert_eq!(
+          decode_column::<String>(&mut encoded_data_cursor),
+          vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+  #[test]
+  fn test_encode_decode_string_with_rle() {
+      let data: Vec<String> = Vec::from_iter([
+          "foo",
+          "foo",
+          "foo",
+          "bar",
+          "baz",
+          "foo",
+      ].into_iter().map(String::from));
+      let encoded_data = encode_column(data.clone(), true);
+      assert_eq!(encoded_data.len(), 34);
+
+      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      assert_eq!(
+          decode_column::<String>(&mut encoded_data_cursor),
+          vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
   }
 #+END_SRC
 
@@ -76,12 +152,11 @@ support efficient reads of run-length-encoded data.
 - =data= - The encoded column data.
 
 #+BEGIN_SRC rust :tangle src/lib.rs :comments link :exports none
-  const MAGIC_STRING_LEN: usize = 9;
-  const MAGIC_STRING: &[u8; MAGIC_STRING_LEN] = b"wmedrano0";
+  const MAGIC_BYTES_LEN: usize = 9;
+  const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
   const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
   fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
-      let magic_number = MAGIC_STRING.iter().copied();
       let elements = data.len();
       let encoded_data = if use_rle {
           let rle_data = rle_encode_data(data.into_iter());
@@ -96,19 +171,19 @@ support efficient reads of run-length-encoded data.
           data_size: encoded_data.len(),
       };
       Vec::from_iter(
-          magic_number
+          MAGIC_BYTES.iter().copied()
               .chain(header.encode())
               .chain(encoded_data.iter().copied()),
       )
   }
 
   fn decode_column_impl<T: 'static + Clone + bincode::Decode>(r: &mut impl std::io::Read) -> Vec<T> {
-      let mut magic_string = [0u8; MAGIC_STRING_LEN];
+      let mut magic_string = [0u8; MAGIC_BYTES_LEN];
       r.read_exact(&mut magic_string).unwrap();
       assert_eq!(
-          &magic_string, MAGIC_STRING,
+          &magic_string, MAGIC_BYTES,
           "Expected magic string {:?}.",
-          MAGIC_STRING
+          MAGIC_BYTES
       );
       let header = Header::decode(r);
       assert!(
@@ -118,7 +193,7 @@ support efficient reads of run-length-encoded data.
           std::any::type_name::<T>(),
       );
       if header.is_rle {
-          let rle_elements: Vec<(u16, T)> =
+          let rle_elements: Vec<RleElement<T>> =
               bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
           vec_from_iter_with_hint(
               rle_decode_data(rle_elements.iter()).cloned(),
@@ -199,47 +274,53 @@ The header contains an encoded struct:
 
 ** Data
 
+*** Basic Encoding
+
 The data consists of a sequence of encoded data. Encoding happens using the
-standard =bincode= package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
+=bincode= package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
 
 *** RLE
 
-[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values. For RLE, the
-data is encoded as a tuple of ~(u16, T)~ where the first item contains the run
-length and the second contains the element.
+[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
 
-TODO: Refactor type from ~(u16, T)~ to something cleaner like a new custom type,
-~RleElement<T>~.
+For RLE, the data is encoded as a Struct with the run length and the
+element. With Bincode, this is the equivalent of encoding a tuple of type
+~(run_length, element)~.
 
 #+BEGIN_SRC rust :tangle src/lib.rs :comments link
-  fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<(u16, T)> {
+  #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
+  pub struct RleElement<T> {
+      pub run_length: u64,
+      pub element: T,
+  }
+
+  fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<RleElement<T>> {
       let mut data = data;
-      let mut element = match data.next() {
-          Some(e) => e,
+      let mut rle = match data.next() {
+          Some(e) => RleElement{run_length: 1, element: e},
           None => return Vec::new(),
       };
-      let mut count = 1;
 
       let mut ret = Vec::new();
-      for next_element in data {
-          if next_element != element || count == u16::MAX {
-              ret.push((count, element));
-              (element, count) = (next_element, 1);
+      for element in data {
+          if element != rle.element || rle.run_length == u64::MAX {
+              ret.push(std::mem::replace(&mut rle, RleElement{run_length: 1, element}));
           } else {
-              count += 1;
+              rle.run_length += 1;
           }
       }
-      if count > 0 {
-          ret.push((count, element));
+      if rle.run_length > 0 {
+          ret.push(rle);
       }
       ret
   }
 
   fn rle_decode_data<'a, T: 'static>(
-      iter: impl 'a + Iterator<Item = &'a (u16, T)>,
+      iter: impl 'a + Iterator<Item = &'a RleElement<T>>,
   ) -> impl Iterator<Item = &'a T> {
-      iter.flat_map(move |(run_length, element)| {
-          std::iter::repeat(element).take(*run_length as usize)
+      iter.flat_map(move |rle| {
+          let run_length = rle.run_length as usize;
+          std::iter::repeat(&rle.element).take(run_length)
       })
   }
 #+END_SRC

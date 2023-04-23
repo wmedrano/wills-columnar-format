@@ -1,26 +1,28 @@
-- [Introduction](#org9dddb4b)
-  - [Conventions](#org5b870de)
-- [API](#orgcdbc1f4)
-  - [V0 Features](#org9ae0653)
-  - [V1 Features Brainstorm](#orgdc63f79)
-  - [Encoding](#orgd5b0f5c)
-  - [Decoding](#org547a809)
-- [Format Specification](#orgd5a7138)
-  - [Header](#orgb6486aa)
-  - [Data](#orgb02faf5)
-    - [RLE](#org6b23078)
-- [Source Code](#org328710f)
+- [Introduction](#org377ccf3)
+  - [Conventions](#org5b9a842)
+- [API](#orga722ea8)
+  - [V0 Features](#orgac58ce3)
+  - [Tentative V1 Features](#orgf9f220b)
+  - [Encoding](#org30f4f5f)
+  - [Decoding](#org2168113)
+  - [Tests](#org4c987cf)
+- [Format Specification](#orgd66247f)
+  - [Header](#org5f59a68)
+  - [Data](#orgee08fde)
+    - [Basic Encoding](#orgd984108)
+    - [RLE](#org4344e29)
+- [Source Code](#org73f3ec6)
 
 
 
-<a id="org9dddb4b"></a>
+<a id="org377ccf3"></a>
 
 # Introduction
 
 [Will's columnar format](https://wmedrano.dev/living-programs/wills-columnar-format) is a columnar format made by will.s.medrano@gmail.com. It is primarily implemented for educational purposes. If you are interested in using a well supported columnar format, consider using [Apache Parquet](https://parquet.apache.org/).
 
 
-<a id="org5b870de"></a>
+<a id="org5b9a842"></a>
 
 ## Conventions
 
@@ -30,16 +32,16 @@ The following conventions are used:
 -   Source code snippets are presented for relatively high level constructs. Lower level details may be omitted from presentation.
 
 
-<a id="orgcdbc1f4"></a>
+<a id="orga722ea8"></a>
 
 # API
 
 
-<a id="org9ae0653"></a>
+<a id="orgac58ce3"></a>
 
 ## V0 Features
 
-V0 is roughly implemented but still requires verification, testing, error handling, and bench-marking.
+V0 is roughly implemented but still requires graceful error handling, and bench-marking.
 
 Supports:
 
@@ -48,18 +50,18 @@ Supports:
 -   Run length encoding.
 
 
-<a id="orgdc63f79"></a>
+<a id="orgf9f220b"></a>
 
-## V1 Features Brainstorm
+## Tentative V1 Features
 
 -   Dictionary encoding for better string compression.
 -   Compression (like zstd or snappy) for data.
 -   Multiple columns.
 -   Push down filtering.
--   Split column data into blocks. Required by push down filtering.
+-   Split column data into blocks. Required to implement effective push down filtering.
 
 
-<a id="orgd5b0f5c"></a>
+<a id="org30f4f5f"></a>
 
 ## Encoding
 
@@ -76,13 +78,13 @@ where
 ```
 
 
-<a id="org547a809"></a>
+<a id="org2168113"></a>
 
 ## Decoding
 
 `decode_column` decodes data from a byte stream into a `Vec<T>`.
 
-TODO: Decoding should return an iterator of `(element_count, element)` to support efficient reads of run-length-encoded data.
+TODO: Decoding should return an iterator of `RleElement<T>` to support efficient reads of run-length-encoded data.
 
 ```rust
 pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
@@ -93,16 +95,86 @@ where
 ```
 
 
-<a id="orgd5a7138"></a>
+<a id="org4c987cf"></a>
+
+## Tests
+
+```rust
+#[test]
+fn test_header_contains_magic_bytes() {
+    let data: Vec<i64> = vec![1, 2, 3, 4];
+    let encoded_data = encode_column(data.clone(), false);
+    assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
+}
+```
+
+```rust
+#[test]
+fn test_encode_decode_i64() {
+    let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
+    let encoded_data = encode_column(data.clone(), false);
+    assert_eq!(encoded_data.len(), 22);
+
+    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    assert_eq!(
+        decode_column::<i64>(&mut encoded_data_cursor),
+        vec![-1, 10, 10, 10, 11, 12, 12, 10]);
+}
+```
+
+```rust
+#[test]
+fn test_encode_decode_string() {
+    let data: Vec<String> = Vec::from_iter([
+        "foo",
+        "foo",
+        "foo",
+        "bar",
+        "baz",
+        "foo",
+    ].into_iter().map(String::from));
+    let encoded_data = encode_column(data.clone(), false);
+    assert_eq!(encoded_data.len(), 38);
+
+    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    assert_eq!(
+        decode_column::<String>(&mut encoded_data_cursor),
+        vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
+}
+```
+
+```rust
+#[test]
+fn test_encode_decode_string_with_rle() {
+    let data: Vec<String> = Vec::from_iter([
+        "foo",
+        "foo",
+        "foo",
+        "bar",
+        "baz",
+        "foo",
+    ].into_iter().map(String::from));
+    let encoded_data = encode_column(data.clone(), true);
+    assert_eq!(encoded_data.len(), 34);
+
+    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    assert_eq!(
+        decode_column::<String>(&mut encoded_data_cursor),
+        vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
+}
+```
+
+
+<a id="orgd66247f"></a>
 
 # Format Specification
 
 -   `magic-bytes` - The magic bytes are "wmedrano0".
--   `header` - The header.
--   `data` - The data.
+-   `header` - The header contains metadata about the column.
+-   `data` - The encoded column data.
 
 
-<a id="orgb6486aa"></a>
+<a id="org5f59a68"></a>
 
 ## Header
 
@@ -125,56 +197,66 @@ pub enum DataType {
 ```
 
 
-<a id="orgb02faf5"></a>
+<a id="orgee08fde"></a>
 
 ## Data
 
-The data consists of a sequence of encoded data. Encoding happens using the standard `bincode` package for all data types.
+
+<a id="orgd984108"></a>
+
+### Basic Encoding
+
+The data consists of a sequence of encoded data. Encoding happens using the `bincode` package to encode/decode data of type `&[T]` and `Vec<T>`.
 
 
-<a id="org6b23078"></a>
+<a id="org4344e29"></a>
 
 ### RLE
 
-[Run length encoding](https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.) is a compression technique for repeated values. For RLE, the data is encoded as a tuple of `(u16, T)` where the first item contains the run length and the second contains the element.
+[Run length encoding](https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.) is a compression technique for repeated values.
 
-TODO: Refactor type from `(u16, T)` to something cleaner like a new custom type, `RleElement<T>`.
+For RLE, the data is encoded as a Struct with the run length and the element. With Bincode, this is the equivalent of encoding a tuple of type `(run_length, element)`.
 
 ```rust
-fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<(u16, T)> {
+#[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
+pub struct RleElement<T> {
+    pub run_length: u64,
+    pub element: T,
+}
+
+fn rle_encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<RleElement<T>> {
     let mut data = data;
-    let mut element = match data.next() {
-        Some(e) => e,
+    let mut rle = match data.next() {
+        Some(e) => RleElement{run_length: 1, element: e},
         None => return Vec::new(),
     };
-    let mut count = 1;
 
     let mut ret = Vec::new();
-    for next_element in data {
-        if next_element != element || count == u16::MAX {
-            ret.push((count, element));
-            (element, count) = (next_element, 1);
+    for element in data {
+        if element != rle.element || rle.run_length == u64::MAX {
+            ret.push(std::mem::replace(&mut rle, RleElement{run_length: 1, element}));
         } else {
-            count += 1;
+            rle.run_length += 1;
         }
     }
-    if count > 0 {
-        ret.push((count, element));
+    if rle.run_length > 0 {
+        ret.push(rle);
     }
     ret
 }
 
 fn rle_decode_data<'a, T: 'static>(
-    iter: impl 'a + Iterator<Item = &'a (u16, T)>,
+    iter: impl 'a + Iterator<Item = &'a RleElement<T>>,
 ) -> impl Iterator<Item = &'a T> {
-    iter.flat_map(move |(run_length, element)| {
-        std::iter::repeat(element).take(*run_length as usize)
+    iter.flat_map(move |rle| {
+        let run_length = rle.run_length as usize;
+        std::iter::repeat(&rle.element).take(run_length)
     })
 }
 ```
 
 
-<a id="org328710f"></a>
+<a id="org73f3ec6"></a>
 
 # Source Code
 
