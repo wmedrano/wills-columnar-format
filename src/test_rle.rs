@@ -12,7 +12,7 @@ fn test_encode_data_compacts_repeated_elements() {
         "repeated-3", "repeated-3", "repeated-3",
     ];
     assert_eq!(
-        encode_data(data.into_iter()),
+        encode_data(data.into_iter()).collect::<Vec<_>>(),
         vec![
             Element{run_length: 3, element: "repeated-3"},
             Element{run_length: 1, element: "no-repeat"},

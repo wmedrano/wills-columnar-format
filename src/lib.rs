@@ -54,7 +54,7 @@ const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::sta
 fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
     let elements = data.len();
     let encoded_data = if use_rle {
-        let rle_data = rle::encode_data(data.into_iter());
+        let rle_data = rle::encode_data(data.into_iter()).collect::<Vec<_>>();
         bincode::encode_to_vec(rle_data, BINCODE_DATA_CONFIG).unwrap()
     } else {
         bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()

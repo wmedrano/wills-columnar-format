@@ -12,25 +12,8 @@ pub struct Element<T> {
     pub element: T,
 }
 
-pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<Element<T>> {
-    let mut data = data;
-    let mut rle = match data.next() {
-        Some(e) => Element{run_length: 1, element: e},
-        None => return Vec::new(),
-    };
-
-    let mut ret = Vec::new();
-    for element in data {
-        if element != rle.element || rle.run_length == u64::MAX {
-            ret.push(std::mem::replace(&mut rle, Element{run_length: 1, element}));
-        } else {
-            rle.run_length += 1;
-        }
-    }
-    if rle.run_length > 0 {
-        ret.push(rle);
-    }
-    ret
+pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
+    EncodeIter{inner: data.peekable()}
 }
 
 pub fn decode_data<'a, T: 'static>(
@@ -42,3 +25,27 @@ pub fn decode_data<'a, T: 'static>(
     })
 }
 // Run Length Encoding:3 ends here
+
+// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:4]]
+struct EncodeIter<I: Iterator> {
+    inner: std::iter::Peekable<I>,
+}
+
+impl<I> Iterator for EncodeIter<I>
+where I: Iterator,
+      I::Item: PartialEq {
+    type Item = Element<I::Item>;
+
+    fn next(&mut self) -> Option<Element<I::Item>> {
+        let element = match self.inner.next() {
+            Some(e) => e,
+            None => return None,
+        };
+        let mut run_length = 1;
+        while self.inner.next_if_eq(&element).is_some() {
+            run_length += 1;
+        }
+        Some(Element{element, run_length})
+    }
+}
+// Run Length Encoding:4 ends here

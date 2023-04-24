@@ -215,7 +215,7 @@ data will have longer runs of consecutive repeated values.
   fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
       let elements = data.len();
       let encoded_data = if use_rle {
-          let rle_data = rle::encode_data(data.into_iter());
+          let rle_data = rle::encode_data(data.into_iter()).collect::<Vec<_>>();
           bincode::encode_to_vec(rle_data, BINCODE_DATA_CONFIG).unwrap()
       } else {
           bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
@@ -372,25 +372,8 @@ of type ~(run_length, element)~.
       pub element: T,
   }
 
-  pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> Vec<Element<T>> {
-      let mut data = data;
-      let mut rle = match data.next() {
-          Some(e) => Element{run_length: 1, element: e},
-          None => return Vec::new(),
-      };
-
-      let mut ret = Vec::new();
-      for element in data {
-          if element != rle.element || rle.run_length == u64::MAX {
-              ret.push(std::mem::replace(&mut rle, Element{run_length: 1, element}));
-          } else {
-              rle.run_length += 1;
-          }
-      }
-      if rle.run_length > 0 {
-          ret.push(rle);
-      }
-      ret
+  pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
+      EncodeIter{inner: data.peekable()}
   }
 
   pub fn decode_data<'a, T: 'static>(
@@ -400,6 +383,30 @@ of type ~(run_length, element)~.
           let run_length = rle.run_length as usize;
           std::iter::repeat(&rle.element).take(run_length)
       })
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/rle.rs :exports none :comments both
+  struct EncodeIter<I: Iterator> {
+      inner: std::iter::Peekable<I>,
+  }
+
+  impl<I> Iterator for EncodeIter<I>
+  where I: Iterator,
+        I::Item: PartialEq {
+      type Item = Element<I::Item>;
+
+      fn next(&mut self) -> Option<Element<I::Item>> {
+          let element = match self.inner.next() {
+              Some(e) => e,
+              None => return None,
+          };
+          let mut run_length = 1;
+          while self.inner.next_if_eq(&element).is_some() {
+              run_length += 1;
+          }
+          Some(Element{element, run_length})
+      }
   }
 #+END_SRC
 
@@ -424,7 +431,7 @@ of type ~(run_length, element)~.
           "repeated-3", "repeated-3", "repeated-3",
       ];
       assert_eq!(
-          encode_data(data.into_iter()),
+          encode_data(data.into_iter()).collect::<Vec<_>>(),
           vec![
               Element{run_length: 3, element: "repeated-3"},
               Element{run_length: 1, element: "no-repeat"},
