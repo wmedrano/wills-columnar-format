@@ -36,5 +36,14 @@ fn test_encoding_size() {
     // Strings take up string_length + 1.
     assert_eq!(bincode_encoded_size("string"), 7);
     assert_eq!(bincode_encoded_size(String::from("string")), 7);
+    assert_eq!(bincode_encoded_size((1u8, String::from("string"))), 8);
+
+    // Fixed sized slices take up space for each of its encoded
+    // elements. Variable size slices (or slice references) and vectors take
+    // up an additional varint integer of overhead for encoding the length.
+    assert_eq!(bincode_encoded_size::<&[u8; 3]>(&[1u8, 2, 3]), 3);
+    assert_eq!(bincode_encoded_size::<[u8; 3]>([1u8, 2, 3]), 3);
+    assert_eq!(bincode_encoded_size::<&[u8]>(&[1u8, 2, 3]), 4);
+    assert_eq!(bincode_encoded_size(vec![1u8, 2, 3]), 4);
 }
 // Basic Encoding:3 ends here

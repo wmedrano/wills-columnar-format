@@ -1,12 +1,3 @@
-// Encoding
-
-// ~encode_column~ encodes a ~Vec<T>~ into Will's Columnar Format. If ~use_rle~ is
-// true, then run length encoding will be used.
-
-// TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
-// =AUTO=.
-
-
 // [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
@@ -15,14 +6,6 @@ where
     encode_column_impl(data, use_rle)
 }
 // Encoding:1 ends here
-
-// Decoding
-
-// ~decode_column~ decodes data from a byte stream into a ~Vec<T>~.
-
-// TODO: Decoding should return an iterator of ~rle::Element<T>~ to support efficient
-// reads of run-length-encoded data.
-
 
 // [[file:../wills-columnar-format.org::*Decoding][Decoding:1]]
 pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
@@ -33,20 +16,10 @@ where
 }
 // Decoding:1 ends here
 
-// Tests
-
-
 // [[file:../wills-columnar-format.org::*Tests][Tests:1]]
 #[cfg(test)]
-mod test_lib;
+mod test_rle;
 // Tests:1 ends here
-
-// Format Overview
-
-// - =magic-bytes= - The magic bytes are 9 bytes long with the contents being "wmedrano0".
-// - =header= - The header contains metadata about the column.
-// - =data= - The encoded column data.
-
 
 // [[file:../wills-columnar-format.org::*Format Overview][Format Overview:1]]
 const MAGIC_BYTES_LEN: usize = 9;
@@ -110,11 +83,6 @@ fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) ->
 }
 // Format Overview:1 ends here
 
-// Header
-
-// The header contains a Bincode V2 encoded struct:
-
-
 // [[file:../wills-columnar-format.org::*Header][Header:1]]
 use bincode::{Decode, Encode};
 use std::any::TypeId;
@@ -142,8 +110,8 @@ impl DataType {
                 TypeId::of::<u16>(),
                 TypeId::of::<i32>(),
                 TypeId::of::<u32>(),
-                TypeId::of::<u64>(),
                 TypeId::of::<i64>(),
+                TypeId::of::<u64>(),
             ]
             .contains(&type_id),
             DataType::String => {
@@ -180,33 +148,14 @@ pub enum DataType {
 }
 // Header:2 ends here
 
-// Basic Encoding
-
-// The data consists of a sequence of encoded data. Encoding happens using the Rust
-// [[https:github.com/bincode-org/bincode][Bincode]] v2 package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
-
-// Note: Bincode v2 currently in release candidate mode.
-
-
 // [[file:../wills-columnar-format.org::*Basic Encoding][Basic Encoding:1]]
+#[cfg(test)]
 pub mod test_bincode;
 // Basic Encoding:1 ends here
-
-// Run Length Encoding
-
-// [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
-
-// For RLE, the data is encoded as a Struct with the run length and the
-// element. With Bincode, this is the equivalent (storage wise) of encoding a tuple
-// of type ~(run_length, element)~.
-
 
 // [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:1]]
 pub mod rle;
 // Run Length Encoding:1 ends here
-
-// Tests
-
 
 // [[file:../wills-columnar-format.org::*Tests][Tests:1]]
 #[cfg(test)]
