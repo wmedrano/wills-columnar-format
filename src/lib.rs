@@ -10,7 +10,8 @@
 // [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
-    T: 'static + bincode::Encode + Eq {
+    T: 'static + bincode::Encode + Eq,
+{
     encode_column_impl(data, use_rle)
 }
 // Encoding:1 ends here
@@ -26,7 +27,8 @@ where
 // [[file:../wills-columnar-format.org::*Decoding][Decoding:1]]
 pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
 where
-    T: 'static + Clone + bincode::Decode {
+    T: 'static + Clone + bincode::Decode,
+{
     decode_column_impl(r)
 }
 // Decoding:1 ends here
@@ -59,14 +61,16 @@ fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: 
     } else {
         bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
     };
-    let header = Header{
+    let header = Header {
         data_type: DataType::from_type::<T>().unwrap(),
         is_rle: use_rle,
         elements,
         data_size: encoded_data.len(),
     };
     Vec::from_iter(
-        MAGIC_BYTES.iter().copied()
+        MAGIC_BYTES
+            .iter()
+            .copied()
             .chain(header.encode())
             .chain(encoded_data.iter().copied()),
     )
@@ -120,13 +124,12 @@ impl Header {
 }
 
 impl DataType {
-    const ALL_DATA_TYPE: [DataType; 2] = [
-        DataType::Integer,
-        DataType::String,
-    ];
+    const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
 
     fn from_type<T: 'static>() -> Option<DataType> {
-        DataType::ALL_DATA_TYPE.into_iter().find(|dt| dt.is_supported::<T>())
+        DataType::ALL_DATA_TYPE
+            .into_iter()
+            .find(|dt| dt.is_supported::<T>())
     }
 
     fn is_supported<T: 'static>(&self) -> bool {
@@ -141,11 +144,11 @@ impl DataType {
                 TypeId::of::<u32>(),
                 TypeId::of::<u64>(),
                 TypeId::of::<i64>(),
-            ].contains(&type_id),
-            DataType::String => [
-                TypeId::of::<String>(),
-                TypeId::of::<&'static str>(),
-            ].contains(&type_id),
+            ]
+            .contains(&type_id),
+            DataType::String => {
+                [TypeId::of::<String>(), TypeId::of::<&'static str>()].contains(&type_id)
+            }
         }
     }
 }
@@ -176,6 +179,18 @@ pub enum DataType {
     String = 1,
 }
 // Header:2 ends here
+
+// Basic Encoding
+
+// The data consists of a sequence of encoded data. Encoding happens using the Rust
+// [[https:github.com/bincode-org/bincode][Bincode]] v2 package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
+
+// Note: Bincode v2 currently in release candidate mode.
+
+
+// [[file:../wills-columnar-format.org::*Basic Encoding][Basic Encoding:1]]
+pub mod test_bincode;
+// Basic Encoding:1 ends here
 
 // Run Length Encoding
 

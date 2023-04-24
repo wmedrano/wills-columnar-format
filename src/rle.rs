@@ -12,14 +12,16 @@ pub struct Element<T> {
     pub element: T,
 }
 
-pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
-    EncodeIter{inner: data.peekable()}
+pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item = Element<T>> {
+    EncodeIter {
+        inner: data.peekable(),
+    }
 }
 
 pub fn decode_data<'a, T: 'static>(
     iter: impl 'a + Iterator<Item = &'a Element<T>>,
 ) -> impl Iterator<Item = &'a T> {
-    iter.flat_map(move |rle| {
+    iter.flat_map(|rle| {
         let run_length = rle.run_length as usize;
         std::iter::repeat(&rle.element).take(run_length)
     })
@@ -32,8 +34,10 @@ struct EncodeIter<I: Iterator> {
 }
 
 impl<I> Iterator for EncodeIter<I>
-where I: Iterator,
-      I::Item: PartialEq {
+where
+    I: Iterator,
+    I::Item: PartialEq,
+{
     type Item = Element<I::Item>;
 
     fn next(&mut self) -> Option<Element<I::Item>> {
@@ -45,7 +49,10 @@ where I: Iterator,
         while self.inner.next_if_eq(&element).is_some() {
             run_length += 1;
         }
-        Some(Element{element, run_length})
+        Some(Element {
+            element,
+            run_length,
+        })
     }
 }
 // Run Length Encoding:4 ends here

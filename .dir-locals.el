@@ -1,3 +1,3 @@
 ((nil . (
-         (org-hugo-section . "living-programs")
+         (org-hugo-section . "literate-programs")
          )))

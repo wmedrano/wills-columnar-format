@@ -22,18 +22,25 @@ The following conventions are used:
 ** Building and Testing Library
 
 Will's Columnar Format is programmed in Org mode with Rust code
-blocks. Compiling requires Emacs and Cargo, the Rust package manager. To
-generate the Rust source code:
+blocks. Compiling requires Emacs and Cargo, the Rust package manager.
 
-1. Open =wills-columnar-format.org= file in Emacs.
-1. Generate the Rust source code by running: ~M-x org-babel-tangle~.
-1. Exit Emacs.
-1. Compile with the library with ~cargo build~.
-1. Run tests with ~cargo test~.
+To generate the Rust source code, run ~M-x org-babel-tangle~ for
+=wills-columnar-format.org= within Emacs. To automatically tangle the current
+file on save, run:
 
-* API
+#+begin_src emacs-lisp
+  (add-hook 'after-save-hook #'org-babel-tangle 0 t)
+#+end_src
 
-** Features
+Building and testing relies on Cargo.
+
+#+begin_src shell
+  cargo build
+  cargo test
+  cargo test $FN_TO_TEST
+#+end_src
+
+* Features
 
 *** V0 Features
 
@@ -53,6 +60,7 @@ Supports:
 - Push down filtering.
 - Split column data into blocks. Required to implement effective push down filtering.
 
+* API
 
 ** Encoding
 
@@ -65,7 +73,8 @@ TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 #+BEGIN_SRC rust :tangle src/lib.rs :comments both
   pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
   where
-      T: 'static + bincode::Encode + Eq {
+      T: 'static + bincode::Encode + Eq,
+  {
       encode_column_impl(data, use_rle)
   }
 #+END_SRC
@@ -80,7 +89,8 @@ reads of run-length-encoded data.
 #+BEGIN_SRC rust :tangle src/lib.rs :comments both
   pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
   where
-      T: 'static + Clone + bincode::Decode {
+      T: 'static + Clone + bincode::Decode,
+  {
       decode_column_impl(r)
   }
 #+END_SRC
@@ -100,33 +110,35 @@ reads of run-length-encoded data.
   #[test]
   fn test_header_contains_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
-      let encoded_data = encode_column(data.clone(), false);
+      let encoded_data: Vec<u8> = encode_column(data.clone(), false);
       assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
   }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_lib.rs :comments both :exports none
-  fn test_encode_decode_for_type<T>()
+  fn test_can_encode_and_decode_for_type<T>(elements: [T; 2])
   where
-      T: 'static + Clone + Default + Encode + Decode + Eq + std::fmt::Debug{
-      let data: Vec<T> = vec![T::default()];
-      let encoded_data = encode_column(data.clone(), false);
+      T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
+  {
+      let data: Vec<T> = elements.to_vec();
+      let encoded_data: Vec<u8> = encode_column(data.clone(), false);
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
-      assert_eq!(
-          decode_column::<T>(&mut encoded_data_cursor),
-          vec![T::default()]);
+      assert_eq!(decode_column::<T>(&mut encoded_data_cursor), elements);
   }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_several() {
-      test_encode_decode_for_type::<i8>();
-      test_encode_decode_for_type::<u8>();
-      test_encode_decode_for_type::<i16>();
-      test_encode_decode_for_type::<u16>();
-      test_encode_decode_for_type::<i32>();
-      test_encode_decode_for_type::<u32>();
-      test_encode_decode_for_type::<i64>();
-      test_encode_decode_for_type::<u64>();
-      test_encode_decode_for_type::<String>();
+      test_can_encode_and_decode_for_type::<i8>([-1, -1]);
+      test_can_encode_and_decode_for_type::<u8>([1, 2]);
+      test_can_encode_and_decode_for_type::<i16>([-1, 1]);
+      test_can_encode_and_decode_for_type::<u16>([1, 2]);
+      test_can_encode_and_decode_for_type::<i32>([-1, 1]);
+      test_can_encode_and_decode_for_type::<u32>([1, 2]);
+      test_can_encode_and_decode_for_type::<i64>([-1, 1]);
+      test_can_encode_and_decode_for_type::<u64>([1, 2]);
+      test_can_encode_and_decode_for_type::<String>(["a".to_string(), "b".to_string()]);
   }
 #+END_SRC
 
@@ -140,49 +152,39 @@ reads of run-length-encoded data.
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_eq!(
           decode_column::<i64>(&mut encoded_data_cursor),
-          vec![-1, 10, 10, 10, 11, 12, 12, 10]);
+          vec![-1, 10, 10, 10, 11, 12, 12, 10]
+      );
   }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_string() {
-      let data: Vec<&'static str> = Vec::from_iter([
-          "foo",
-          "foo",
-          "foo",
-          "bar",
-          "baz",
-          "foo",
-      ].into_iter());
+      let data: Vec<&'static str> =
+          Vec::from_iter(["foo", "foo", "foo", "bar", "baz", "foo"].into_iter());
       let encoded_data = encode_column(data.clone(), false);
       assert_eq!(encoded_data.len(), 38);
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_eq!(
           decode_column::<String>(&mut encoded_data_cursor),
-          vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
+          vec!["foo", "foo", "foo", "bar", "baz", "foo"]
+      );
   }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_lib.rs :comments both
   #[test]
   fn test_encode_decode_string_with_rle() {
-      let data = [
-          "foo",
-          "foo",
-          "foo",
-          "bar",
-          "baz",
-          "foo",
-      ];
+      let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
       let encoded_data = encode_column(data.to_vec(), true);
       assert_eq!(encoded_data.len(), 34);
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_eq!(
           decode_column::<String>(&mut encoded_data_cursor),
-          vec!["foo", "foo", "foo", "bar", "baz", "foo"]);
+          vec!["foo", "foo", "foo", "bar", "baz", "foo"]
+      );
   }
 #+END_SRC
 
@@ -220,14 +222,16 @@ data will have longer runs of consecutive repeated values.
       } else {
           bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
       };
-      let header = Header{
+      let header = Header {
           data_type: DataType::from_type::<T>().unwrap(),
           is_rle: use_rle,
           elements,
           data_size: encoded_data.len(),
       };
       Vec::from_iter(
-          MAGIC_BYTES.iter().copied()
+          MAGIC_BYTES
+              .iter()
+              .copied()
               .chain(header.encode())
               .chain(encoded_data.iter().copied()),
       )
@@ -280,13 +284,12 @@ The header contains a Bincode V2 encoded struct:
   }
 
   impl DataType {
-      const ALL_DATA_TYPE: [DataType; 2] = [
-          DataType::Integer,
-          DataType::String,
-      ];
+      const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
 
       fn from_type<T: 'static>() -> Option<DataType> {
-          DataType::ALL_DATA_TYPE.into_iter().find(|dt| dt.is_supported::<T>())
+          DataType::ALL_DATA_TYPE
+              .into_iter()
+              .find(|dt| dt.is_supported::<T>())
       }
 
       fn is_supported<T: 'static>(&self) -> bool {
@@ -301,11 +304,11 @@ The header contains a Bincode V2 encoded struct:
                   TypeId::of::<u32>(),
                   TypeId::of::<u64>(),
                   TypeId::of::<i64>(),
-              ].contains(&type_id),
-              DataType::String => [
-                  TypeId::of::<String>(),
-                  TypeId::of::<&'static str>(),
-              ].contains(&type_id),
+              ]
+              .contains(&type_id),
+              DataType::String => {
+                  [TypeId::of::<String>(), TypeId::of::<&'static str>()].contains(&type_id)
+              }
           }
       }
   }
@@ -346,6 +349,51 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 
 Note: Bincode v2 currently in release candidate mode.
 
+#+begin_src rust :tangle src/lib.rs :comments both :exports none
+  pub mod test_bincode;
+#+end_src
+
+#+begin_src rust :tangle src/test_bincode.rs :comments both :exports none
+  use crate::rle;
+  fn bincode_encoded_size<T: bincode::Encode>(element: T) -> usize {
+      bincode::encode_to_vec(element, bincode::config::standard()).unwrap().len()
+  }
+#+end_src
+
+#+begin_src rust :tangle src/test_bincode.rs :comments both
+  #[test]
+  fn test_encoding_size() {
+      // Small numbers are encoded efficiently.
+      assert_eq!(bincode_encoded_size(1u8), 1);
+      assert_eq!(bincode_encoded_size(-1i8), 1);
+      assert_eq!(bincode_encoded_size(1u64), 1);
+      assert_eq!(bincode_encoded_size(-1i64), 1);
+
+      // Larger numbers use more bytes with varint encoding. This does not apply
+      // to u8 and i8 which do not use varint.
+      assert_eq!(bincode_encoded_size(255u16), 3);
+      assert_eq!(bincode_encoded_size(255u8), 1);
+      assert_eq!(bincode_encoded_size(127i8), 1);
+      assert_eq!(bincode_encoded_size(-128i8), 1);
+
+      // Derived types (like Structs and Tuples) take up as much space as their subcomponents.
+      assert_eq!(bincode_encoded_size(1u64), 1);
+      assert_eq!(bincode_encoded_size(25564), 3);
+      assert_eq!(bincode_encoded_size((1u64, 255u64)), 4);
+      assert_eq!(
+          bincode_encoded_size(rle::Element {
+              element: 1u64,
+              run_length: 255
+          }),
+          4
+      );
+
+      // Strings take up string_length + 1.
+      assert_eq!(bincode_encoded_size("string"), 7);
+      assert_eq!(bincode_encoded_size(String::from("string")), 7);
+  }
+#+end_src
+
 ** Run Length Encoding
 
 [[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Run length encoding]] is a compression technique for repeated values.
@@ -372,14 +420,16 @@ of type ~(run_length, element)~.
       pub element: T,
   }
 
-  pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
-      EncodeIter{inner: data.peekable()}
+  pub fn encode_data<T: Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item = Element<T>> {
+      EncodeIter {
+          inner: data.peekable(),
+      }
   }
 
   pub fn decode_data<'a, T: 'static>(
       iter: impl 'a + Iterator<Item = &'a Element<T>>,
   ) -> impl Iterator<Item = &'a T> {
-      iter.flat_map(move |rle| {
+      iter.flat_map(|rle| {
           let run_length = rle.run_length as usize;
           std::iter::repeat(&rle.element).take(run_length)
       })
@@ -392,8 +442,10 @@ of type ~(run_length, element)~.
   }
 
   impl<I> Iterator for EncodeIter<I>
-  where I: Iterator,
-        I::Item: PartialEq {
+  where
+      I: Iterator,
+      I::Item: PartialEq,
+  {
       type Item = Element<I::Item>;
 
       fn next(&mut self) -> Option<Element<I::Item>> {
@@ -405,7 +457,10 @@ of type ~(run_length, element)~.
           while self.inner.next_if_eq(&element).is_some() {
               run_length += 1;
           }
-          Some(Element{element, run_length})
+          Some(Element {
+              element,
+              run_length,
+          })
       }
   }
 #+END_SRC
@@ -425,18 +480,35 @@ of type ~(run_length, element)~.
   #[test]
   fn test_encode_data_compacts_repeated_elements() {
       let data = [
-          "repeated-3", "repeated-3", "repeated-3",
+          "repeated-3",
+          "repeated-3",
+          "repeated-3",
           "no-repeat",
-          "repeated-2", "repeated-2",
-          "repeated-3", "repeated-3", "repeated-3",
+          "repeated-2",
+          "repeated-2",
+          "repeated-3",
+          "repeated-3",
+          "repeated-3",
       ];
       assert_eq!(
           encode_data(data.into_iter()).collect::<Vec<_>>(),
           vec![
-              Element{run_length: 3, element: "repeated-3"},
-              Element{run_length: 1, element: "no-repeat"},
-              Element{run_length: 2, element: "repeated-2"},
-              Element{run_length: 3, element: "repeated-3"},
+              Element {
+                  run_length: 3,
+                  element: "repeated-3"
+              },
+              Element {
+                  run_length: 1,
+                  element: "no-repeat"
+              },
+              Element {
+                  run_length: 2,
+                  element: "repeated-2"
+              },
+              Element {
+                  run_length: 3,
+                  element: "repeated-3"
+              },
           ],
       );
   }
@@ -446,21 +518,38 @@ of type ~(run_length, element)~.
   #[test]
   fn test_decode_repeats_elements_by_run_length() {
       let data = vec![
-          Element{run_length: 3, element: "repeated-3"},
-          Element{run_length: 1, element: "no-repeat"},
-          Element{run_length: 2, element: "repeated-2"},
-          Element{run_length: 3, element: "repeated-3"},
-    ];
-    let decoded_data: Vec<&str> = decode_data(data.iter()).cloned().collect();
-    assert_eq!(
-        decoded_data,
-        [
-            "repeated-3", "repeated-3", "repeated-3",
-            "no-repeat",
-            "repeated-2", "repeated-2",
-            "repeated-3", "repeated-3", "repeated-3",
-        ]
-    );
+          Element {
+              run_length: 3,
+              element: "repeated-3",
+          },
+          Element {
+              run_length: 1,
+              element: "no-repeat",
+          },
+          Element {
+              run_length: 2,
+              element: "repeated-2",
+          },
+          Element {
+              run_length: 3,
+              element: "repeated-3",
+          },
+      ];
+      let decoded_data: Vec<&str> = decode_data(data.iter()).cloned().collect();
+      assert_eq!(
+          decoded_data,
+          [
+              "repeated-3",
+              "repeated-3",
+              "repeated-3",
+              "no-repeat",
+              "repeated-2",
+              "repeated-2",
+              "repeated-3",
+              "repeated-3",
+              "repeated-3",
+          ]
+      );
   }
 #+END_SRC
 
