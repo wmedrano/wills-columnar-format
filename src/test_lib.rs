@@ -56,8 +56,7 @@ fn test_encode_decode_integer() {
 // [[file:../wills-columnar-format.org::*Tests][Tests:7]]
 #[test]
 fn test_encode_decode_string() {
-    let data: Vec<&'static str> =
-        Vec::from_iter(["foo", "foo", "foo", "bar", "baz", "foo"].into_iter());
+    let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
     let encoded_data = encode_column(data.clone(), false);
     assert_eq!(encoded_data.len(), 38);
 

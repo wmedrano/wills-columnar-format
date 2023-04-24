@@ -99,7 +99,7 @@ reads of run-length-encoded data.
 
 #+BEGIN_SRC rust :tangle src/lib.rs :exports none :comments link
   #[cfg(test)]
-  mod test_rle;
+  mod test_lib;
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_lib.rs :exports none :comments link
@@ -160,8 +160,7 @@ reads of run-length-encoded data.
 #+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
   #[test]
   fn test_encode_decode_string() {
-      let data: Vec<&'static str> =
-          Vec::from_iter(["foo", "foo", "foo", "bar", "baz", "foo"].into_iter());
+      let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
       let encoded_data = encode_column(data.clone(), false);
       assert_eq!(encoded_data.len(), 38);
 

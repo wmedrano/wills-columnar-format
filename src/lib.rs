@@ -18,7 +18,7 @@ where
 
 // [[file:../wills-columnar-format.org::*Tests][Tests:1]]
 #[cfg(test)]
-mod test_rle;
+mod test_lib;
 // Tests:1 ends here
 
 // [[file:../wills-columnar-format.org::*Format Overview][Format Overview:1]]
