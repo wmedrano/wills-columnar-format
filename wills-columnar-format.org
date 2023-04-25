@@ -11,39 +11,6 @@
 :CUSTOM_ID: Introduction-h6a696o03tj0
 :END:
 
-#+begin_src rust :tangle src/lib.rs :exports none
-  pub mod rle;
-
-  #[cfg(test)]
-  pub mod test_bincode;
-  #[cfg(test)]
-  mod test_lib;
-  #[cfg(test)]
-  mod test_rle;
-
-  use bincode::{Decode, Encode};
-  use itertools::Either;
-  use std::any::TypeId;
-#+end_src
-
-#+begin_src rust :tangle src/rle.rs :exports none
-  use bincode::{Decode, Encode};
-#+end_src
-
-#+begin_src rust :tangle src/test_bincode.rs :exports none
-  use crate::rle;
-#+end_src
-
-#+begin_src rust :tangle src/test_lib.rs :exports none
-  use super::*;
-  use itertools::assert_equal;
-#+end_src
-
-#+begin_src rust :tangle src/test_rle.rs :exports none
-  use crate::rle::*;
-  use itertools::assert_equal;
-#+end_src
-
 *Will's Columnar Format V0*
 
 [[https://wmedrano.dev/literate-programs/wills-columnar-format][Will's Columnar Format]] is a columnar format made by will.s.medrano@gmail.com. It
@@ -67,7 +34,10 @@ The following conventions are used:
 :END:
 
 Will's Columnar Format is programmed in Org mode with Rust code
-blocks. Compiling requires Emacs and Cargo, the Rust package manager.
+blocks. Compiling requires:
+
+1. Emacs - Text editor and lisp environment.
+2. Cargo - The Rust package manager.
 
 To generate the Rust source code, run ~M-x org-babel-tangle~ for
 =wills-columnar-format.org= within Emacs. To automatically tangle the current
@@ -85,23 +55,64 @@ Building and testing relies on Cargo.
   cargo test $FN_TO_TEST
 #+end_src
 
-** Cargo.toml
+** Dependencies
 :PROPERTIES:
 :CUSTOM_ID: IntroductionCargotoml-cqc696o03tj0
 :END:
 
-#+begin_src toml :tangle Cargo.toml
+Rust dependencies are automatically fetched with Cargo. This library depends on
+the following crates:
+
+#+begin_src toml :tangle Cargo.toml :exports none
   [package]
   name = "columnar-format"
   version = "0.1.0"
   edition = "2021"
-
   # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
   [dependencies]
+#+end_src
+
+#+begin_src toml :tangle Cargo.toml
+  # Note: Bincode v2 currently in release candidate. This should be bumped to 2.0
+  # once Bincode v2 is released.
   bincode = "2.0.0-rc.3"
   itertools = "0.10"
 #+end_src
+
+#+begin_src rust :tangle src/lib.rs :exports none
+  pub mod rle;
+
+  #[cfg(test)]
+  mod test_bincode;
+  #[cfg(test)]
+  mod test_lib;
+  #[cfg(test)]
+  mod test_rle;
+
+  use bincode::{Decode, Encode};
+  use itertools::Either;
+  use std::{any::TypeId, io::Read, marker::PhantomData};
+#+end_src
+
+#+begin_src rust :tangle src/rle.rs :exports none
+  use bincode::{Decode, Encode};
+  use itertools::Itertools;
+#+end_src
+
+#+begin_src rust :tangle src/test_bincode.rs :exports none
+  use crate::rle;
+#+end_src
+
+#+begin_src rust :tangle src/test_lib.rs :exports none
+  use super::*;
+  use itertools::assert_equal;
+#+end_src
+
+#+begin_src rust :tangle src/test_rle.rs :exports none
+  use crate::rle::*;
+  use itertools::assert_equal;
+#+end_src
+
 
 * Features
 :PROPERTIES:
@@ -147,8 +158,9 @@ Supports:
 true, then run length encoding will be used.
 
 #+begin_src rust :tangle src/lib.rs
-  pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
+  pub fn encode_column<Iter, T>(data: Iter, use_rle: bool) -> Vec<u8>
   where
+      Iter: ExactSizeIterator + Iterator<Item = T>,
       T: 'static + bincode::Encode + Eq,
   {
       encode_column_impl(data, use_rle)
@@ -164,9 +176,9 @@ true, then run length encoding will be used.
 ~rle::Element<T>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
 
 #+begin_src rust :tangle src/lib.rs
-  pub fn decode_column<T>(r: &mut impl std::io::Read) -> impl Iterator<Item = rle::Element<T>>
+  pub fn decode_column<T>(r: &'_ mut impl std::io::Read) -> impl '_ + Iterator<Item = rle::Element<T>>
   where
-      T: 'static + Clone + bincode::Decode,
+      T: 'static + bincode::Decode,
   {
       decode_column_impl(r)
   }
@@ -182,15 +194,14 @@ true, then run length encoding will be used.
 :CUSTOM_ID: OptimizationTipsSortingData-rsi696o03tj0
 :END:
 
-Sorting may be very beneficial if:
-
-- Order is not important.
+If:
+- Order does not matter.
 - There are lots of repeated values.
 
 If the above are true, try sorting and enabling run length encoding. Run length
 encoding is efficient at storing data that is heavily repeated. By sorting, the
-data will have longer runs of consecutive repeated values.
-
+data will have longer runs of consecutive repeated values. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length
+Encoding]] for technical details.
 
 ** Tests
 :PROPERTIES:
@@ -199,9 +210,9 @@ data will have longer runs of consecutive repeated values.
 
 #+begin_src rust :tangle src/test_lib.rs
   #[test]
-  fn test_header_contains_magic_bytes() {
+  fn test_encoding_prefixed_by_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
-      let encoded_data: Vec<u8> = encode_column(data.clone(), false);
+      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
       assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
   }
 #+end_src
@@ -212,7 +223,8 @@ data will have longer runs of consecutive repeated values.
       T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
   {
       let data: Vec<T> = elements.to_vec();
-      let encoded_data: Vec<u8> = encode_column(data.clone(), false);
+      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
+      assert_eq!(&encoded_data[0..9], b"wmedrano0");
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
           decode_column::<T>(&mut encoded_data_cursor),
@@ -249,8 +261,20 @@ data will have longer runs of consecutive repeated values.
   #[test]
   fn test_encode_decode_integer() {
       let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
-      let encoded_data = encode_column(data.clone(), false);
-      assert_eq!(encoded_data.len(), 22);
+      let encoded_data = encode_column(data.into_iter(), false);
+      assert_eq!(
+          encoded_data.len(),
+          [
+              9, // magic_bytes
+              1, // u8 header:data_type
+              1, // u8 header:use_rle
+              1, // varint header:element_count
+              1, // varint header:data_size
+              8, // data contains 8 elements of varint with size 1.
+          ]
+          .iter()
+          .sum()
+      );
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
@@ -297,8 +321,20 @@ data will have longer runs of consecutive repeated values.
   #[test]
   fn test_encode_decode_string() {
       let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
-      let encoded_data = encode_column(data.clone(), false);
-      assert_eq!(encoded_data.len(), 38);
+      let encoded_data = encode_column(data.into_iter(), false);
+      assert_eq!(
+          encoded_data.len(),
+          [
+              9,  // magic_bytes
+              1,  // u8 header:data_type
+              1,  // u8 header:use_rle
+              1,  // varint header:element_count
+              1,  // varint header:data_size
+              24, // data contains 8 elements of varint with size 1.
+          ]
+          .iter()
+          .sum()
+      );
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
@@ -337,8 +373,27 @@ data will have longer runs of consecutive repeated values.
   #[test]
   fn test_encode_decode_string_with_rle() {
       let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
-      let encoded_data = encode_column(data.to_vec(), true);
-      assert_eq!(encoded_data.len(), 34);
+      let encoded_data = encode_column(data.into_iter(), true);
+      assert_eq!(
+          encoded_data.len(),
+          [
+              9, // magic_bytes
+              1, // u8 header:data_type
+              1, // u8 header:use_rle
+              1, // varint header:element_count
+              1, // varint header:data_size
+              4, // data:element_1:rle_element string "foo" of encoding size 4.
+              1, // data:element_1:rle_run_length varint of size 1.
+              4, // data:element_2:rle_element string "bar" of encoding size 4.
+              1, // data:element_2:rle_run_length varint of size 1.
+              4, // data:element_3:rle_element string "baz" of encoding size 4.
+              1, // data:element_3:rle_run_length varint of size 1.
+              4, // data:element_3:rle_element string "foo" of encoding size 4.
+              1, // data:element_3:rle_run_length varint of size 1.
+          ]
+          .iter()
+          .sum()
+      );
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
@@ -375,20 +430,37 @@ data will have longer runs of consecutive repeated values.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-- =magic-bytes= - The magic bytes are 9 bytes long with the contents being "wmedrano0".
-- =header= - The header contains metadata about the column.
-- =data= - The encoded column data.
+#+begin_src dot :file format-overview.png :exports results :cache yes
+  digraph FormatOverview {
+      node[shape=record];
+      rankdir=LR;
+      overview[label="<magicbytes> Magic Bytes|<header>Header|<data>Data..."];
+      overview:magicbytes -> magicbytes;
+      overview:header -> header;
+      overview:data -> data;
+
+      magicbytes[label="wmedrano0"];
+      header[label="u8:data_type | u8:use_rle | varint:element_count | varint:data_size"];
+      data[label="bincoded:element_1 | bincoded:element_2 | ... | bincoded:element_n"];
+  }
+#+end_src
+
+#+RESULTS:
+[[file:format-overview.png]]
 
 #+begin_src rust :tangle src/lib.rs
-  fn encode_column_impl<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
+  fn encode_column_impl<T>(
+      data: impl ExactSizeIterator + Iterator<Item = T>,
+      use_rle: bool,
+  ) -> Vec<u8>
   where
       T: 'static + bincode::Encode + Eq,
   {
       let elements = data.len();
       let encoded_data = if use_rle {
-          encode_data_rle_impl(data)
+          encode_data_rle_impl(data.into_iter())
       } else {
-          encode_data_base_impl(data)
+          encode_data_base_impl(data.into_iter())
       };
       let header = Header {
           data_type: DataType::from_type::<T>().unwrap(),
@@ -401,8 +473,6 @@ data will have longer runs of consecutive repeated values.
 #+end_src
 
 #+begin_src rust :tangle src/lib.rs :exports none
-  const MAGIC_BYTES_LEN: usize = 9;
-  const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
   const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
   fn encode_header_and_data(
@@ -421,8 +491,8 @@ data will have longer runs of consecutive repeated values.
   }
 
   fn decode_column_impl<T: 'static + bincode::Decode>(
-      r: &mut impl std::io::Read,
-  ) -> impl Iterator<Item = rle::Element<T>> {
+      r: &'_ mut impl std::io::Read,
+  ) -> impl '_ + Iterator<Item = rle::Element<T>> {
       let mut magic_string = [0u8; MAGIC_BYTES_LEN];
       r.read_exact(&mut magic_string).unwrap();
       assert_eq!(
@@ -438,17 +508,29 @@ data will have longer runs of consecutive repeated values.
           std::any::type_name::<T>(),
       );
       if header.use_rle {
-          let rle_elements: Vec<rle::Element<T>> =
-              bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-          Either::Left(rle_elements.into_iter())
+          let rle_elements /*: impl Iterator<Item=Element<T>>*/ = decode_rle_data(header.elements, r);
+          Either::Left(rle_elements)
       } else {
-          let elements: Vec<T> = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-          Either::Right(elements.into_iter().map(|element| rle::Element {
+          let elements: DataDecoder<T, _> = DataDecoder::new(header.elements, r);
+          let rle_elements = elements.map(|element| rle::Element {
               element,
               run_length: 1,
-          }))
+          });
+          Either::Right(rle_elements)
       }
   }
+#+end_src
+
+** Magic Bytes
+:PROPERTIES:
+:CUSTOM_ID: FormatSpecificationMagicBytes-iyl7tna13tj0
+:END:
+
+The magic bytes are 9 bytes long with the contents being "wmedrano0".
+
+#+begin_src rust :tangle src/lib.rs
+  const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
+  const MAGIC_BYTES_LEN: usize = 9;
 #+end_src
 
 ** Header
@@ -456,7 +538,7 @@ data will have longer runs of consecutive repeated values.
 :CUSTOM_ID: FormatSpecificationHeader-3tk696o03tj0
 :END:
 
-The header contains a Bincode V2 encoded struct:
+The header contains a Bincode encoded struct:
 
 #+begin_src rust :exports none :tangle src/lib.rs
   impl Header {
@@ -531,13 +613,15 @@ The header contains a Bincode V2 encoded struct:
 :END:
 
 The data consists of a sequence of encoded data. Encoding happens using the Rust
-[[https:github.com/bincode-org/bincode][Bincode]] v2 package to encode/decode data of type ~&[T]~ and ~Vec<T>~.
-
-Note: Bincode v2 currently in release candidate.
+[[https:github.com/bincode-org/bincode][Bincode]] package to encode/decode each data element.
 
 #+begin_src rust :tangle src/lib.rs
-  fn encode_data_base_impl<T: 'static + bincode::Encode>(data: Vec<T>) -> Vec<u8> {
-      bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
+  fn encode_data_base_impl<T: 'static + bincode::Encode>(data: impl Iterator<Item = T>) -> Vec<u8> {
+      let mut encoded = Vec::new();
+      for element in data {
+          bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG).unwrap();
+      }
+      encoded
   }
 #+end_src
 
@@ -600,6 +684,8 @@ Note: Bincode v2 currently in release candidate.
 
 Run length encoding [[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Wikipedia]]] is a compression technique for repeated values.
 
+TODO: Add visualization.
+
 #+begin_src rust :tangle src/rle.rs
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
   pub struct Element<T> {
@@ -612,60 +698,97 @@ Run length encoding [[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text
   }
 #+end_src
 
-To encode data of type ~Vec<T>~ with RLE, it is first converted into a
-~Vec<rle::Element<T>>~. It is then used to encode the run length encoded vector
-into bytes.
+To encode an iterator of type ~T~ with RLE, it is first converted into an
+iterator of type ~rle::Element<T>~. It is then used to encode the run length
+encoded vector into bytes.
 
 #+begin_src rust :tangle src/lib.rs
-  fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>) -> Vec<u8> {
-      let rle_data: Vec<rle::Element<T>> = rle::EncodeIter::new(data.into_iter()).collect();
+  fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(
+      data: impl Iterator<Item = T>,
+  ) -> Vec<u8> {
+      let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
       encode_data_base_impl(rle_data)
   }
 #+end_src
 
-#+begin_src rust :tangle src/rle.rs
-  pub struct EncodeIter<I: Iterator> {
-      inner: std::iter::Peekable<I>,
+#+begin_src rust :tangle src/lib.rs :exports none
+  fn decode_rle_data<T: 'static + bincode::Decode>(
+      elements: usize,
+      r: &'_ mut impl Read,
+  ) -> impl '_ + Iterator<Item = rle::Element<T>> {
+      let mut elements = elements;
+      std::iter::from_fn(move || {
+          if elements == 0 {
+              return None;
+          }
+          let rle_element: rle::Element<T> =
+              bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
+          assert!(
+              rle_element.run_length as usize <= elements,
+              "{} <= {}",
+              elements,
+              rle_element.run_length
+          );
+          elements -= rle_element.run_length as usize;
+          Some(rle_element)
+      })
   }
 
-  impl<I> Iterator for EncodeIter<I>
-  where
-      I: Iterator,
-      I::Item: PartialEq,
-  {
-      type Item = Element<I::Item>;
+  struct DataDecoder<T, R> {
+      reader: R,
+      element_count: usize,
+      element_type: PhantomData<T>,
+  }
 
-      fn next(&mut self) -> Option<Element<I::Item>> {
-          // Start the run or exit if the underlying iterator is empty.
-          let element = match self.inner.next() {
-              Some(e) => e,
-              None => return None,
-          };
-          let mut run_length = 1;
-
-          // Continue the run as long as the next element is equal to the current running element.
-          while self.inner.next_if_eq(&element).is_some() {
-              run_length += 1;
+  impl<T, R> DataDecoder<T, R> {
+      pub fn new(element_count: usize, reader: R) -> DataDecoder<T, R> {
+          DataDecoder {
+              reader,
+              element_count,
+              element_type: PhantomData,
           }
+      }
+  }
 
-          Some(Element {
-              element,
-              run_length,
-          })
+  impl<T, R> Iterator for DataDecoder<T, R>
+  where
+      T: bincode::Decode,
+      R: Read,
+  {
+      type Item = T;
+
+      fn next(&mut self) -> Option<T> {
+          if self.element_count == 0 {
+              return None;
+          }
+          self.element_count -= 1;
+          let element: T =
+              bincode::decode_from_std_read(&mut self.reader, BINCODE_DATA_CONFIG).unwrap();
+          Some(element)
       }
   }
 #+end_src
 
-#+begin_src rust :tangle src/rle.rs :exports none
-  impl<I> EncodeIter<I>
+#+begin_src rust :tangle src/rle.rs
+  pub fn encode_iter<I>(iter: I) -> impl Iterator<Item = Element<I::Item>>
   where
       I: Iterator,
+      I::Item: PartialEq,
   {
-      pub fn new(iter: I) -> EncodeIter<I> {
-          EncodeIter {
-              inner: iter.peekable(),
+      iter.peekable().batching(|iter| {
+          let element = match iter.next() {
+              Some(e) => e,
+              None => return None,
+          };
+          let mut run_length = 1;
+          while iter.next_if_eq(&element).is_some() {
+              run_length += 1;
           }
-      }
+          Some(Element {
+              element,
+              run_length,
+          })
+      })
   }
 #+end_src
 
@@ -678,7 +801,7 @@ into bytes.
   #[test]
   fn test_encode_data_without_elements_produces_no_elements() {
       let data: Vec<String> = vec![];
-      assert_equal(EncodeIter::new(data.into_iter()), []);
+      assert_equal(encode_iter(data.into_iter()), []);
   }
 
   #[test]
@@ -695,7 +818,7 @@ into bytes.
           "repeated-3",
       ];
       assert_equal(
-          EncodeIter::new(data.into_iter()),
+          encode_iter(data.into_iter()),
           [
               Element {
                   run_length: 3,

@@ -1,6 +1,6 @@
-// [[file:../wills-columnar-format.org::#Introduction-h6a696o03tj0][Introduction:3]]
+// [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:5]]
 use crate::rle;
-// Introduction:3 ends here
+// Dependencies:5 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:2]]
 fn encoded_size<T: bincode::Encode>(element: T) -> usize {

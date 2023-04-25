@@ -1,13 +1,13 @@
-// [[file:../wills-columnar-format.org::#Introduction-h6a696o03tj0][Introduction:5]]
+// [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:7]]
 use crate::rle::*;
 use itertools::assert_equal;
-// Introduction:5 ends here
+// Dependencies:7 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncodingTests-xhn696o03tj0][Tests:1]]
 #[test]
 fn test_encode_data_without_elements_produces_no_elements() {
     let data: Vec<String> = vec![];
-    assert_equal(EncodeIter::new(data.into_iter()), []);
+    assert_equal(encode_iter(data.into_iter()), []);
 }
 
 #[test]
@@ -24,7 +24,7 @@ fn test_encode_data_combines_repeated_elements() {
         "repeated-3",
     ];
     assert_equal(
-        EncodeIter::new(data.into_iter()),
+        encode_iter(data.into_iter()),
         [
             Element {
                 run_length: 3,

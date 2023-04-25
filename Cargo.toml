@@ -1,12 +1,15 @@
-# [[file:wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Cargo.toml:1]]
+# [[file:wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:1]]
 [package]
 name = "columnar-format"
 version = "0.1.0"
 edition = "2021"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+# Dependencies:1 ends here
+
+# [[file:wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:2]]
+# Note: Bincode v2 currently in release candidate. This should be bumped to 2.0
+# once Bincode v2 is released.
 bincode = "2.0.0-rc.3"
 itertools = "0.10"
-# Cargo.toml:1 ends here
+# Dependencies:2 ends here
