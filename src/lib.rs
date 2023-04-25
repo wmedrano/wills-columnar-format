@@ -1,4 +1,4 @@
-// [[file:../wills-columnar-format.org::*Introduction][Introduction:1]]
+// [[file:../wills-columnar-format.org::#Introduction-h6a696o03tj0][Introduction:1]]
 pub mod rle;
 
 #[cfg(test)]
@@ -9,10 +9,11 @@ mod test_lib;
 mod test_rle;
 
 use bincode::{Decode, Encode};
+use itertools::Either;
 use std::any::TypeId;
 // Introduction:1 ends here
 
-// [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
+// [[file:../wills-columnar-format.org::#APIEncoding-w0g696o03tj0][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
     T: 'static + bincode::Encode + Eq,
@@ -21,8 +22,8 @@ where
 }
 // Encoding:1 ends here
 
-// [[file:../wills-columnar-format.org::*Decoding][Decoding:1]]
-pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
+// [[file:../wills-columnar-format.org::#APIDecoding-npg696o03tj0][Decoding:1]]
+pub fn decode_column<T>(r: &mut impl std::io::Read) -> impl Iterator<Item = rle::Element<T>>
 where
     T: 'static + Clone + bincode::Decode,
 {
@@ -30,27 +31,40 @@ where
 }
 // Decoding:1 ends here
 
-// [[file:../wills-columnar-format.org::*Format Overview][Format Overview:1]]
+// [[file:../wills-columnar-format.org::#FormatSpecificationFormatOverview-j3k696o03tj0][Format Overview:1]]
+fn encode_column_impl<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
+where
+    T: 'static + bincode::Encode + Eq,
+{
+    let elements = data.len();
+    let encoded_data = if use_rle {
+        encode_data_rle_impl(data)
+    } else {
+        encode_data_base_impl(data)
+    };
+    let header = Header {
+        data_type: DataType::from_type::<T>().unwrap(),
+        use_rle,
+        elements,
+        data_size: encoded_data.len(),
+    };
+    encode_header_and_data(MAGIC_BYTES, header, encoded_data)
+}
+// Format Overview:1 ends here
+
+// [[file:../wills-columnar-format.org::#FormatSpecificationFormatOverview-j3k696o03tj0][Format Overview:2]]
 const MAGIC_BYTES_LEN: usize = 9;
 const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
 const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
-fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: bool) -> Vec<u8> {
-    let elements = data.len();
-    let encoded_data = if use_rle {
-        let rle_data = rle::encode_data(data.into_iter()).collect::<Vec<_>>();
-        bincode::encode_to_vec(rle_data, BINCODE_DATA_CONFIG).unwrap()
-    } else {
-        bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
-    };
-    let header = Header {
-        data_type: DataType::from_type::<T>().unwrap(),
-        is_rle: use_rle,
-        elements,
-        data_size: encoded_data.len(),
-    };
+fn encode_header_and_data(
+    magic_bytes: &'static [u8],
+    header: Header,
+    encoded_data: Vec<u8>,
+) -> Vec<u8> {
+    assert_eq!(header.data_size, encoded_data.len());
     Vec::from_iter(
-        MAGIC_BYTES
+        magic_bytes
             .iter()
             .copied()
             .chain(header.encode())
@@ -58,7 +72,9 @@ fn encode_column_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>, use_rle: 
     )
 }
 
-fn decode_column_impl<T: 'static + Clone + bincode::Decode>(r: &mut impl std::io::Read) -> Vec<T> {
+fn decode_column_impl<T: 'static + bincode::Decode>(
+    r: &mut impl std::io::Read,
+) -> impl Iterator<Item = rle::Element<T>> {
     let mut magic_string = [0u8; MAGIC_BYTES_LEN];
     r.read_exact(&mut magic_string).unwrap();
     assert_eq!(
@@ -73,26 +89,21 @@ fn decode_column_impl<T: 'static + Clone + bincode::Decode>(r: &mut impl std::io
         header.data_type,
         std::any::type_name::<T>(),
     );
-    if header.is_rle {
+    if header.use_rle {
         let rle_elements: Vec<rle::Element<T>> =
             bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-        vec_from_iter_with_hint(
-            rle::decode_data(rle_elements.iter()).cloned(),
-            header.elements,
-        )
+        Either::Left(rle_elements.into_iter())
     } else {
-        bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap()
+        let elements: Vec<T> = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
+        Either::Right(elements.into_iter().map(|element| rle::Element {
+            element,
+            run_length: 1,
+        }))
     }
 }
+// Format Overview:2 ends here
 
-fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) -> Vec<T> {
-    let mut ret = Vec::with_capacity(len_hint);
-    ret.extend(iter);
-    ret
-}
-// Format Overview:1 ends here
-
-// [[file:../wills-columnar-format.org::*Header][Header:1]]
+// [[file:../wills-columnar-format.org::#FormatSpecificationHeader-3tk696o03tj0][Header:1]]
 impl Header {
     const CONFIGURATION: bincode::config::Configuration = bincode::config::standard();
 }
@@ -138,11 +149,11 @@ impl Header {
 }
 // Header:1 ends here
 
-// [[file:../wills-columnar-format.org::*Header][Header:2]]
+// [[file:../wills-columnar-format.org::#FormatSpecificationHeader-3tk696o03tj0][Header:2]]
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Header {
     pub data_type: DataType,
-    pub is_rle: bool,
+    pub use_rle: bool,
     pub elements: usize,
     pub data_size: usize,
 }
@@ -153,3 +164,16 @@ pub enum DataType {
     String = 1,
 }
 // Header:2 ends here
+
+// [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:1]]
+fn encode_data_base_impl<T: 'static + bincode::Encode>(data: Vec<T>) -> Vec<u8> {
+    bincode::encode_to_vec(data, BINCODE_DATA_CONFIG).unwrap()
+}
+// Basic Encoding:1 ends here
+
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:2]]
+fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(data: Vec<T>) -> Vec<u8> {
+    let rle_data: Vec<rle::Element<T>> = rle::EncodeIter::new(data.into_iter()).collect();
+    encode_data_base_impl(rle_data)
+}
+// Run Length Encoding:2 ends here
