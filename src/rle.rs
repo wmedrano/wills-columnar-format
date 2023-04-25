@@ -1,8 +1,8 @@
-// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:2]]
+// [[file:../wills-columnar-format.org::*Introduction][Introduction:2]]
 use bincode::{Decode, Encode};
-// Run Length Encoding:2 ends here
+// Introduction:2 ends here
 
-// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:3]]
+// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:1]]
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
 pub struct Element<T> {
     // Run length is stored as a u64. We could try using a smaller datatype,
@@ -26,9 +26,9 @@ pub fn decode_data<'a, T: 'static>(
         std::iter::repeat(&rle.element).take(run_length)
     })
 }
-// Run Length Encoding:3 ends here
+// Run Length Encoding:1 ends here
 
-// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:4]]
+// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:2]]
 struct EncodeIter<I: Iterator> {
     inner: std::iter::Peekable<I>,
 }
@@ -55,4 +55,4 @@ where
         })
     }
 }
-// Run Length Encoding:4 ends here
+// Run Length Encoding:2 ends here

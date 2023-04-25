@@ -1,9 +1,42 @@
+:PROPERTIES:
+:header-args: :comments link
+:END:
 #+title: Will's Columnar Format
 #+author: Will Medrano
 #+email: will.s.medrano@gmail.com
 #+date: 2023-04-23
 
 * Introduction
+
+#+begin_src rust :tangle src/lib.rs :exports none
+  pub mod rle;
+
+  #[cfg(test)]
+  pub mod test_bincode;
+  #[cfg(test)]
+  mod test_lib;
+  #[cfg(test)]
+  mod test_rle;
+
+  use bincode::{Decode, Encode};
+  use std::any::TypeId;
+#+end_src
+
+#+begin_src rust :tangle src/rle.rs :exports none
+  use bincode::{Decode, Encode};
+#+end_src
+
+#+begin_src rust :tangle src/test_bincode.rs :exports none
+  use crate::rle;
+#+end_src
+
+#+begin_src rust :tangle src/test_lib.rs :exports none
+  use super::*;
+#+end_src
+
+#+begin_src rust :tangle src/test_rle.rs :exports none
+  use crate::rle::*;
+#+end_src
 
 *Will's Columnar Format V0*
 
@@ -70,14 +103,14 @@ true, then run length encoding will be used.
 TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 =AUTO=.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+begin_src rust :tangle src/lib.rs
   pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
   where
       T: 'static + bincode::Encode + Eq,
   {
       encode_column_impl(data, use_rle)
   }
-#+END_SRC
+#+end_src
 
 ** Decoding
 
@@ -86,36 +119,27 @@ TODO: ~use_rle~ should have more granular values like =NEVER=, =ALWAYS=, and
 TODO: Decoding should return an iterator of ~rle::Element<T>~ to support efficient
 reads of run-length-encoded data.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+begin_src rust :tangle src/lib.rs
   pub fn decode_column<T>(r: &mut impl std::io::Read) -> Vec<T>
   where
       T: 'static + Clone + bincode::Decode,
   {
       decode_column_impl(r)
   }
-#+END_SRC
+#+end_src
 
-** Tests
+** API Tests
 
-#+BEGIN_SRC rust :tangle src/lib.rs :exports none :comments link
-  #[cfg(test)]
-  mod test_lib;
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/test_lib.rs :exports none :comments link
-  use super::*;
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+begin_src rust :tangle src/test_lib.rs
   #[test]
   fn test_header_contains_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
       let encoded_data: Vec<u8> = encode_column(data.clone(), false);
       assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :exports none :comments link
+#+begin_src rust :tangle src/test_lib.rs :exports none
   fn test_can_encode_and_decode_for_type<T>(elements: [T; 2])
   where
       T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
@@ -125,9 +149,9 @@ reads of run-length-encoded data.
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_eq!(decode_column::<T>(&mut encoded_data_cursor), elements);
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+begin_src rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_several() {
       test_can_encode_and_decode_for_type::<i8>([-1, -1]);
@@ -140,9 +164,9 @@ reads of run-length-encoded data.
       test_can_encode_and_decode_for_type::<u64>([1, 2]);
       test_can_encode_and_decode_for_type::<String>(["a".to_string(), "b".to_string()]);
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+begin_src rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_integer() {
       let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
@@ -155,9 +179,9 @@ reads of run-length-encoded data.
           vec![-1, 10, 10, 10, 11, 12, 12, 10]
       );
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+begin_src rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_string() {
       let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -170,9 +194,9 @@ reads of run-length-encoded data.
           vec!["foo", "foo", "foo", "bar", "baz", "foo"]
       );
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs :comments link
+#+begin_src rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_string_with_rle() {
       let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -185,7 +209,7 @@ reads of run-length-encoded data.
           vec!["foo", "foo", "foo", "bar", "baz", "foo"]
       );
   }
-#+END_SRC
+#+end_src
 
 * Optimization Tips
 
@@ -208,7 +232,7 @@ data will have longer runs of consecutive repeated values.
 - =header= - The header contains metadata about the column.
 - =data= - The encoded column data.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :exports none :comments link
+#+begin_src rust :tangle src/lib.rs :exports none
   const MAGIC_BYTES_LEN: usize = 9;
   const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
   const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
@@ -268,16 +292,13 @@ data will have longer runs of consecutive repeated values.
       ret.extend(iter);
       ret
   }
-#+END_SRC
+#+end_src
 
 ** Header
 
 The header contains a Bincode V2 encoded struct:
 
-#+BEGIN_SRC rust :exports none :tangle src/lib.rs :comments link
-  use bincode::{Decode, Encode};
-  use std::any::TypeId;
-
+#+begin_src rust :exports none :tangle src/lib.rs
   impl Header {
       const CONFIGURATION: bincode::config::Configuration = bincode::config::standard();
   }
@@ -321,9 +342,9 @@ The header contains a Bincode V2 encoded struct:
           bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
       }
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/lib.rs :comments link
+#+begin_src rust :tangle src/lib.rs
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
   pub struct Header {
       pub data_type: DataType,
@@ -337,7 +358,7 @@ The header contains a Bincode V2 encoded struct:
       Integer = 0,
       String = 1,
   }
-#+END_SRC
+#+end_src
 
 * Data Encoding
 
@@ -348,19 +369,15 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 
 Note: Bincode v2 currently in release candidate mode.
 
-#+begin_src rust :tangle src/lib.rs :exports none :comments link
-  #[cfg(test)]
-  pub mod test_bincode;
-#+end_src
-
-#+begin_src rust :tangle src/test_bincode.rs :exports none :comments link
-  use crate::rle;
+#+begin_src rust :tangle src/test_bincode.rs :exports none
   fn bincode_encoded_size<T: bincode::Encode>(element: T) -> usize {
-      bincode::encode_to_vec(element, bincode::config::standard()).unwrap().len()
+      bincode::encode_to_vec(element, bincode::config::standard())
+          .unwrap()
+          .len()
   }
 #+end_src
 
-#+begin_src rust :tangle src/test_bincode.rs :comments link
+#+begin_src rust :tangle src/test_bincode.rs
   #[test]
   fn test_encoding_size() {
       // Small numbers are encoded efficiently.
@@ -411,15 +428,7 @@ For RLE, the data is encoded as a Struct with the run length and the
 element. With Bincode, this is the equivalent (storage wise) of encoding a tuple
 of type ~(run_length, element)~.
 
-#+BEGIN_SRC rust :tangle src/lib.rs :exports none :comments link
-  pub mod rle;
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/rle.rs :exports none :comments link
-  use bincode::{Decode, Encode};
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/rle.rs :comments link
+#+begin_src rust :tangle src/rle.rs
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
   pub struct Element<T> {
       // Run length is stored as a u64. We could try using a smaller datatype,
@@ -443,9 +452,9 @@ of type ~(run_length, element)~.
           std::iter::repeat(&rle.element).take(run_length)
       })
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/rle.rs :exports none :comments link
+#+begin_src rust :tangle src/rle.rs :exports none
   struct EncodeIter<I: Iterator> {
       inner: std::iter::Peekable<I>,
   }
@@ -472,20 +481,11 @@ of type ~(run_length, element)~.
           })
       }
   }
-#+END_SRC
+#+end_src
 
-*** Tests
+*** RLE Tests
 
-#+BEGIN_SRC rust :tangle src/lib.rs :exports none :comments link
-  #[cfg(test)]
-  mod test_rle;
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/test_rle.rs :exports none :comments link
-  use crate::rle::*;
-#+END_SRC
-
-#+BEGIN_SRC rust :tangle src/test_rle.rs :comments link
+#+begin_src rust :tangle src/test_rle.rs
   #[test]
   fn test_encode_data_compacts_repeated_elements() {
       let data = [
@@ -521,9 +521,9 @@ of type ~(run_length, element)~.
           ],
       );
   }
-#+END_SRC
+#+end_src
 
-#+BEGIN_SRC rust :tangle src/test_rle.rs :comments link
+#+begin_src rust :tangle src/test_rle.rs
   #[test]
   fn test_decode_repeats_elements_by_run_length() {
       let data = vec![
@@ -560,7 +560,7 @@ of type ~(run_length, element)~.
           ]
       );
   }
-#+END_SRC
+#+end_src
 
 * Source Code
 

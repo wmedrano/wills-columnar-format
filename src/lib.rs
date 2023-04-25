@@ -1,3 +1,17 @@
+// [[file:../wills-columnar-format.org::*Introduction][Introduction:1]]
+pub mod rle;
+
+#[cfg(test)]
+pub mod test_bincode;
+#[cfg(test)]
+mod test_lib;
+#[cfg(test)]
+mod test_rle;
+
+use bincode::{Decode, Encode};
+use std::any::TypeId;
+// Introduction:1 ends here
+
 // [[file:../wills-columnar-format.org::*Encoding][Encoding:1]]
 pub fn encode_column<T>(data: Vec<T>, use_rle: bool) -> Vec<u8>
 where
@@ -15,11 +29,6 @@ where
     decode_column_impl(r)
 }
 // Decoding:1 ends here
-
-// [[file:../wills-columnar-format.org::*Tests][Tests:1]]
-#[cfg(test)]
-mod test_lib;
-// Tests:1 ends here
 
 // [[file:../wills-columnar-format.org::*Format Overview][Format Overview:1]]
 const MAGIC_BYTES_LEN: usize = 9;
@@ -84,9 +93,6 @@ fn vec_from_iter_with_hint<T>(iter: impl Iterator<Item = T>, len_hint: usize) ->
 // Format Overview:1 ends here
 
 // [[file:../wills-columnar-format.org::*Header][Header:1]]
-use bincode::{Decode, Encode};
-use std::any::TypeId;
-
 impl Header {
     const CONFIGURATION: bincode::config::Configuration = bincode::config::standard();
 }
@@ -147,17 +153,3 @@ pub enum DataType {
     String = 1,
 }
 // Header:2 ends here
-
-// [[file:../wills-columnar-format.org::*Basic Encoding][Basic Encoding:1]]
-#[cfg(test)]
-pub mod test_bincode;
-// Basic Encoding:1 ends here
-
-// [[file:../wills-columnar-format.org::*Run Length Encoding][Run Length Encoding:1]]
-pub mod rle;
-// Run Length Encoding:1 ends here
-
-// [[file:../wills-columnar-format.org::*Tests][Tests:1]]
-#[cfg(test)]
-mod test_rle;
-// Tests:1 ends here

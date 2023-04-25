@@ -1,8 +1,8 @@
-// [[file:../wills-columnar-format.org::*Tests][Tests:2]]
+// [[file:../wills-columnar-format.org::*Introduction][Introduction:5]]
 use crate::rle::*;
-// Tests:2 ends here
+// Introduction:5 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:3]]
+// [[file:../wills-columnar-format.org::*RLE Tests][RLE Tests:1]]
 #[test]
 fn test_encode_data_compacts_repeated_elements() {
     let data = [
@@ -38,9 +38,9 @@ fn test_encode_data_compacts_repeated_elements() {
         ],
     );
 }
-// Tests:3 ends here
+// RLE Tests:1 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:4]]
+// [[file:../wills-columnar-format.org::*RLE Tests][RLE Tests:2]]
 #[test]
 fn test_decode_repeats_elements_by_run_length() {
     let data = vec![
@@ -77,4 +77,4 @@ fn test_decode_repeats_elements_by_run_length() {
         ]
     );
 }
-// Tests:4 ends here
+// RLE Tests:2 ends here

@@ -1,17 +1,17 @@
-// [[file:../wills-columnar-format.org::*Tests][Tests:2]]
+// [[file:../wills-columnar-format.org::*Introduction][Introduction:4]]
 use super::*;
-// Tests:2 ends here
+// Introduction:4 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:3]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:1]]
 #[test]
 fn test_header_contains_magic_bytes() {
     let data: Vec<i64> = vec![1, 2, 3, 4];
     let encoded_data: Vec<u8> = encode_column(data.clone(), false);
     assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
 }
-// Tests:3 ends here
+// API Tests:1 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:4]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:2]]
 fn test_can_encode_and_decode_for_type<T>(elements: [T; 2])
 where
     T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
@@ -21,9 +21,9 @@ where
     let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_eq!(decode_column::<T>(&mut encoded_data_cursor), elements);
 }
-// Tests:4 ends here
+// API Tests:2 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:5]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:3]]
 #[test]
 fn test_encode_decode_several() {
     test_can_encode_and_decode_for_type::<i8>([-1, -1]);
@@ -36,9 +36,9 @@ fn test_encode_decode_several() {
     test_can_encode_and_decode_for_type::<u64>([1, 2]);
     test_can_encode_and_decode_for_type::<String>(["a".to_string(), "b".to_string()]);
 }
-// Tests:5 ends here
+// API Tests:3 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:6]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:4]]
 #[test]
 fn test_encode_decode_integer() {
     let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
@@ -51,9 +51,9 @@ fn test_encode_decode_integer() {
         vec![-1, 10, 10, 10, 11, 12, 12, 10]
     );
 }
-// Tests:6 ends here
+// API Tests:4 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:7]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:5]]
 #[test]
 fn test_encode_decode_string() {
     let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -66,9 +66,9 @@ fn test_encode_decode_string() {
         vec!["foo", "foo", "foo", "bar", "baz", "foo"]
     );
 }
-// Tests:7 ends here
+// API Tests:5 ends here
 
-// [[file:../wills-columnar-format.org::*Tests][Tests:8]]
+// [[file:../wills-columnar-format.org::*API Tests][API Tests:6]]
 #[test]
 fn test_encode_decode_string_with_rle() {
     let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -81,4 +81,4 @@ fn test_encode_decode_string_with_rle() {
         vec!["foo", "foo", "foo", "bar", "baz", "foo"]
     );
 }
-// Tests:8 ends here
+// API Tests:6 ends here
