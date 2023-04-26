@@ -10,7 +10,7 @@ mod test_rle;
 
 use bincode::{Decode, Encode};
 use itertools::Either;
-use std::{any::TypeId, io::Read, marker::PhantomData};
+use std::{any::TypeId, io::Read};
 // Dependencies:3 ends here
 
 // [[file:../wills-columnar-format.org::#APIEncoding-w0g696o03tj0][Encoding:1]]
@@ -92,10 +92,10 @@ fn decode_column_impl<T: 'static + bincode::Decode>(
         std::any::type_name::<T>(),
     );
     if header.use_rle {
-        let rle_elements /*: impl Iterator<Item=Element<T>>*/ = decode_rle_data(header.elements, r);
+        let rle_elements = decode_rle_data(header.elements, r);
         Either::Left(rle_elements)
     } else {
-        let elements: DataDecoder<T, _> = DataDecoder::new(header.elements, r);
+        let elements = decode_bincode_data(header.elements, r);
         let rle_elements = elements.map(|element| rle::Element {
             element,
             run_length: 1,
@@ -172,7 +172,7 @@ pub enum DataType {
 }
 // Header:2 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:1]]
+// [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:2]]
 fn encode_data_base_impl<T: 'static + bincode::Encode>(data: impl Iterator<Item = T>) -> Vec<u8> {
     let mut encoded = Vec::new();
     for element in data {
@@ -180,18 +180,18 @@ fn encode_data_base_impl<T: 'static + bincode::Encode>(data: impl Iterator<Item 
     }
     encoded
 }
-// Basic Encoding:1 ends here
+// Basic Encoding:2 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:2]]
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:3]]
 fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(
     data: impl Iterator<Item = T>,
 ) -> Vec<u8> {
     let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
     encode_data_base_impl(rle_data)
 }
-// Run Length Encoding:2 ends here
+// Run Length Encoding:3 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:3]]
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:4]]
 fn decode_rle_data<T: 'static + bincode::Decode>(
     elements: usize,
     r: &'_ mut impl Read,
@@ -203,48 +203,24 @@ fn decode_rle_data<T: 'static + bincode::Decode>(
         }
         let rle_element: rle::Element<T> =
             bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-        assert!(
-            rle_element.run_length as usize <= elements,
-            "{} <= {}",
-            elements,
-            rle_element.run_length
-        );
+        assert!(rle_element.run_length as usize <= elements,);
         elements -= rle_element.run_length as usize;
         Some(rle_element)
     })
 }
 
-struct DataDecoder<T, R> {
-    reader: R,
-    element_count: usize,
-    element_type: PhantomData<T>,
-}
-
-impl<T, R> DataDecoder<T, R> {
-    pub fn new(element_count: usize, reader: R) -> DataDecoder<T, R> {
-        DataDecoder {
-            reader,
-            element_count,
-            element_type: PhantomData,
-        }
-    }
-}
-
-impl<T, R> Iterator for DataDecoder<T, R>
-where
-    T: bincode::Decode,
-    R: Read,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        if self.element_count == 0 {
+fn decode_bincode_data<T: bincode::Decode>(
+    elements: usize,
+    r: &'_ mut impl Read,
+) -> impl '_ + Iterator<Item = T> {
+    let mut elements = elements;
+    std::iter::from_fn(move || -> Option<T> {
+        if elements == 0 {
             return None;
         }
-        self.element_count -= 1;
-        let element: T =
-            bincode::decode_from_std_read(&mut self.reader, BINCODE_DATA_CONFIG).unwrap();
+        elements -= 1;
+        let element: T = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
         Some(element)
-    }
+    })
 }
-// Run Length Encoding:3 ends here
+// Run Length Encoding:4 ends here

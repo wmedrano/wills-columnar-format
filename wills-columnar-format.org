@@ -43,7 +43,7 @@ To generate the Rust source code, run ~M-x org-babel-tangle~ for
 =wills-columnar-format.org= within Emacs. To automatically tangle the current
 file on save, run:
 
-#+begin_src emacs-lisp
+#+begin_src emacs-lisp :results silent
   (add-hook 'after-save-hook #'org-babel-tangle 0 t)
 #+end_src
 
@@ -53,6 +53,21 @@ Building and testing relies on Cargo.
   cargo build
   cargo test
   cargo test $FN_TO_TEST
+#+end_src
+
+*** Emacs Utility Blocks
+:PROPERTIES:
+:CUSTOM_ID: IntroductionBuildingandTestingLibraryEmacsUtilityBlocks-l6zkn7714tj0
+:END:
+
+The following code snippets may be evaluated with =C-c C-c=.
+
+#+begin_src emacs-lisp :results silent
+  ;; Execute blocks in this file without asking for confirmation.
+  (setq-local org-confirm-babel-evaluate nil)
+
+  ;; Export the org file as a Hugo markdown post.
+  (add-hook 'after-save-hook #'org-hugo-export-to-md 0 t)
 #+end_src
 
 ** Dependencies
@@ -91,7 +106,7 @@ the following crates:
 
   use bincode::{Decode, Encode};
   use itertools::Either;
-  use std::{any::TypeId, io::Read, marker::PhantomData};
+  use std::{any::TypeId, io::Read};
 #+end_src
 
 #+begin_src rust :tangle src/rle.rs :exports none
@@ -112,7 +127,6 @@ the following crates:
   use crate::rle::*;
   use itertools::assert_equal;
 #+end_src
-
 
 * Features
 :PROPERTIES:
@@ -202,6 +216,48 @@ If the above are true, try sorting and enabling run length encoding. Run length
 encoding is efficient at storing data that is heavily repeated. By sorting, the
 data will have longer runs of consecutive repeated values. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length
 Encoding]] for technical details.
+
+*** RLE
+:PROPERTIES:
+:CUSTOM_ID: APIOptimizationTipsRLE-0w1ln7714tj0
+:END:
+
+Run length encoding is used to compress data that is heavily repeated.
+
+Example with benefits:
+
+#+begin_src dot :file rle-good-example.png :exports results :cache yes
+  digraph RleGoodExample {
+      bgcolor="transparent";
+      node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
+      rankdir=LR;
+      norle[label="a|a|a|a|a|b|b|b|a|a", fillcolor=5];
+      rle[label="(a, 4)|(b, 3)|(a, 2)"];
+      norle -> rle[label="Run Length\nEncode"];
+  }
+#+end_src
+
+#+RESULTS[67b646d28cb3764f466cfea308f3fd091ee1b05f]:
+[[file:rle-good-example.png]]
+
+In the worst case when there are no runs, RLE is actually worse. In the example
+below, notice how both "no rle" and "rle" have the same number of
+elements. "rle" is actually strictly worse since it has to encode the value
+*and* the run length.
+
+#+begin_src dot :file rle-bad-example.png :exports results :cache yes
+  digraph RleBadExample {
+      bgcolor="transparent";
+      node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
+      rankdir=LR;
+      norle[label="no rle|a|b|a|b|a|b|a|b|a|b"];
+      rle[label="rle|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)", fillcolor=5];
+      norle -> rle[label="Run Length\nEncode"];
+  }
+#+end_src
+
+#+RESULTS[647d5199f683660fe752162f157cedd1b43fb26b]:
+[[file:rle-bad-example.png]]
 
 ** Tests
 :PROPERTIES:
@@ -430,23 +486,24 @@ Encoding]] for technical details.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-#+begin_src dot :file format-overview.png :exports results :cache yes
+#+begin_src dot :file format-diagram.png :exports results :cache yes
   digraph FormatOverview {
-      node[shape=record];
+      bgcolor="transparent";
+      node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir=LR;
       overview[label="<magicbytes> Magic Bytes|<header>Header|<data>Data..."];
       overview:magicbytes -> magicbytes;
       overview:header -> header;
       overview:data -> data;
 
-      magicbytes[label="wmedrano0"];
+      magicbytes[label="\"wmedrano0\""];
       header[label="u8:data_type | u8:use_rle | varint:element_count | varint:data_size"];
-      data[label="bincoded:element_1 | bincoded:element_2 | ... | bincoded:element_n"];
+      data[label="bincoded:element_1|bincoded:element_2|...|bincoded:element_n"];
   }
 #+end_src
 
 #+RESULTS:
-[[file:format-overview.png]]
+[[file:format-diagram.png]]
 
 #+begin_src rust :tangle src/lib.rs
   fn encode_column_impl<T>(
@@ -508,10 +565,10 @@ Encoding]] for technical details.
           std::any::type_name::<T>(),
       );
       if header.use_rle {
-          let rle_elements /*: impl Iterator<Item=Element<T>>*/ = decode_rle_data(header.elements, r);
+          let rle_elements = decode_rle_data(header.elements, r);
           Either::Left(rle_elements)
       } else {
-          let elements: DataDecoder<T, _> = DataDecoder::new(header.elements, r);
+          let elements = decode_bincode_data(header.elements, r);
           let rle_elements = elements.map(|element| rle::Element {
               element,
               run_length: 1,
@@ -615,6 +672,18 @@ The header contains a Bincode encoded struct:
 The data consists of a sequence of encoded data. Encoding happens using the Rust
 [[https:github.com/bincode-org/bincode][Bincode]] package to encode/decode each data element.
 
+#+begin_src dot :file basic-encoding.png
+  digraph {
+      bgcolor="transparent";
+      node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
+      rankdir=LR;
+      data[label="bincode(element_1)|bincode(element_2)|..|bincode(element_n)"];
+  }
+#+end_src
+
+#+RESULTS:
+[[file:basic-encoding.png]]
+
 #+begin_src rust :tangle src/lib.rs
   fn encode_data_base_impl<T: 'static + bincode::Encode>(data: impl Iterator<Item = T>) -> Vec<u8> {
       let mut encoded = Vec::new();
@@ -625,6 +694,46 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
   }
 #+end_src
 
+#+begin_src rust :tangle src/lib.rs :exports none
+  struct DataDecoder<T, R> {
+      reader: R,
+      element_count: usize,
+      element_type: PhantomData<T>,
+  }
+
+  impl<T, R> DataDecoder<T, R> {
+      pub fn new(element_count: usize, reader: R) -> DataDecoder<T, R> {
+          DataDecoder {
+              reader,
+              element_count,
+              element_type: PhantomData,
+          }
+      }
+  }
+
+  impl<T, R> Iterator for DataDecoder<T, R>
+  where
+      T: bincode::Decode,
+      R: Read,
+  {
+      type Item = T;
+
+      fn next(&mut self) -> Option<T> {
+          if self.element_count == 0 {
+              return None;
+          }
+          self.element_count -= 1;
+          let element: T =
+              bincode::decode_from_std_read(&mut self.reader, BINCODE_DATA_CONFIG).unwrap();
+          Some(element)
+      }
+  }
+#+end_src
+
+*** Tests
+:PROPERTIES:
+:CUSTOM_ID: DataEncodingBasicEncodingTests-sfz7wx714tj0
+:END:
 #+begin_src rust :tangle src/test_bincode.rs :exports none
   fn encoded_size<T: bincode::Encode>(element: T) -> usize {
       bincode::encode_to_vec(element, bincode::config::standard())
@@ -682,9 +791,26 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 :CUSTOM_ID: DataEncodingRunLengthEncoding-0vm696o03tj0
 :END:
 
-Run length encoding [[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Wikipedia]]] is a compression technique for repeated values.
+Run length encoding [[[https://en.wikipedia.org/wiki/Run-length_encoding#:~:text=Run%2Dlength%20encoding%20(RLE),than%20as%20the%20original%20run.][Wikipedia]]] is a compression technique for repeated
+values. For RLE encoding, instead of storing each element, we store a
+tuple. ~(element, run_length)~ where ~element~ contains the data and the
+~run_length~ stores how many times the value is repeated. To easily determine if
+a column benefits from RLE, try to measure the encoding with and without rle.
 
-TODO: Add visualization.
+#+begin_src dot :file rle-encoding.png
+  digraph {
+      bgcolor="transparent";
+      node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
+      no_rle[label="a|a|a|a|a|a|a|a|b|a"];
+      rle[label="(a,8)|(b,1)|(a,1)"];
+      decode_rle[label="a|a|a|a|a|a|a|a|b|a"];
+      no_rle -> rle[label="Run Length\nEncode"];
+      rle -> decode_rle[label="Run Length\nDecode"]
+  }
+#+end_src
+
+#+RESULTS:
+[[file:rle-encoding.png]]
 
 #+begin_src rust :tangle src/rle.rs
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
@@ -711,7 +837,7 @@ encoded vector into bytes.
   }
 #+end_src
 
-#+begin_src rust :tangle src/lib.rs :exports none
+#+begin_src rust :tangle src/rle.rs
   fn decode_rle_data<T: 'static + bincode::Decode>(
       elements: usize,
       r: &'_ mut impl Read,
@@ -723,71 +849,24 @@ encoded vector into bytes.
           }
           let rle_element: rle::Element<T> =
               bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-          assert!(
-              rle_element.run_length as usize <= elements,
-              "{} <= {}",
-              elements,
-              rle_element.run_length
-          );
+          assert!(rle_element.run_length as usize <= elements,);
           elements -= rle_element.run_length as usize;
           Some(rle_element)
       })
   }
 
-  struct DataDecoder<T, R> {
-      reader: R,
-      element_count: usize,
-      element_type: PhantomData<T>,
-  }
-
-  impl<T, R> DataDecoder<T, R> {
-      pub fn new(element_count: usize, reader: R) -> DataDecoder<T, R> {
-          DataDecoder {
-              reader,
-              element_count,
-              element_type: PhantomData,
-          }
-      }
-  }
-
-  impl<T, R> Iterator for DataDecoder<T, R>
-  where
-      T: bincode::Decode,
-      R: Read,
-  {
-      type Item = T;
-
-      fn next(&mut self) -> Option<T> {
-          if self.element_count == 0 {
+  fn decode_bincode_data<T: bincode::Decode>(
+      elements: usize,
+      r: &'_ mut impl Read,
+  ) -> impl '_ + Iterator<Item = T> {
+      let mut elements = elements;
+      std::iter::from_fn(move || -> Option<T> {
+          if elements == 0 {
               return None;
           }
-          self.element_count -= 1;
-          let element: T =
-              bincode::decode_from_std_read(&mut self.reader, BINCODE_DATA_CONFIG).unwrap();
+          elements -= 1;
+          let element: T = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
           Some(element)
-      }
-  }
-#+end_src
-
-#+begin_src rust :tangle src/rle.rs
-  pub fn encode_iter<I>(iter: I) -> impl Iterator<Item = Element<I::Item>>
-  where
-      I: Iterator,
-      I::Item: PartialEq,
-  {
-      iter.peekable().batching(|iter| {
-          let element = match iter.next() {
-              Some(e) => e,
-              None => return None,
-          };
-          let mut run_length = 1;
-          while iter.next_if_eq(&element).is_some() {
-              run_length += 1;
-          }
-          Some(Element {
-              element,
-              run_length,
-          })
       })
   }
 #+end_src

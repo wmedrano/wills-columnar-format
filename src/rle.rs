@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use itertools::Itertools;
 // Dependencies:4 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:1]]
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:2]]
 #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
 pub struct Element<T> {
     // The underlying element.
@@ -13,19 +13,16 @@ pub struct Element<T> {
     // efficient for smaller sizes.
     pub run_length: u64,
 }
-// Run Length Encoding:1 ends here
+// Run Length Encoding:2 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:4]]
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:5]]
 pub fn encode_iter<I>(iter: I) -> impl Iterator<Item = Element<I::Item>>
 where
     I: Iterator,
     I::Item: PartialEq,
 {
-    iter.peekable().batching(|iter| {
-        let element = match iter.next() {
-            Some(e) => e,
-            None => return None,
-        };
+    iter.peekable().batching(|iter| -> Option<Element<I::Item>>{
+        let element = iter.next()?;
         let mut run_length = 1;
         while iter.next_if_eq(&element).is_some() {
             run_length += 1;
@@ -36,4 +33,4 @@ where
         })
     })
 }
-// Run Length Encoding:4 ends here
+// Run Length Encoding:5 ends here
