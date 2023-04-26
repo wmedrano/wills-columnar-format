@@ -7,7 +7,7 @@ use itertools::assert_equal;
 #[test]
 fn test_encoding_prefixed_by_magic_bytes() {
     let data: Vec<i64> = vec![1, 2, 3, 4];
-    let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
+    let encoded_data: Vec<u8> = encode_column(data.into_iter(), false).unwrap();
     assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
 }
 // Tests:1 ends here
@@ -18,11 +18,13 @@ where
     T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
 {
     let data: Vec<T> = elements.to_vec();
-    let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
+    let encoded_data: Vec<u8> = encode_column(data.into_iter(), false).unwrap();
     assert_eq!(&encoded_data[0..9], b"wmedrano0");
     let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_equal(
-        decode_column::<T>(&mut encoded_data_cursor),
+        decode_column::<T>(&mut encoded_data_cursor)
+            .unwrap()
+            .map(Result::unwrap),
         [
             rle::Element {
                 element: elements[0].clone(),
@@ -56,7 +58,7 @@ fn test_encode_decode_several() {
 #[test]
 fn test_encode_decode_integer() {
     let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
-    let encoded_data = encode_column(data.into_iter(), false);
+    let encoded_data = encode_column(data.into_iter(), false).unwrap();
     assert_eq!(
         encoded_data.len(),
         [
@@ -73,7 +75,9 @@ fn test_encode_decode_integer() {
 
     let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_equal(
-        decode_column::<i64>(&mut encoded_data_cursor),
+        decode_column::<i64>(&mut encoded_data_cursor)
+            .unwrap()
+            .map(Result::unwrap),
         [
             rle::Element {
                 element: -1,
@@ -116,7 +120,7 @@ fn test_encode_decode_integer() {
 #[test]
 fn test_encode_decode_string() {
     let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
-    let encoded_data = encode_column(data.into_iter(), false);
+    let encoded_data = encode_column(data.into_iter(), false).unwrap();
     assert_eq!(
         encoded_data.len(),
         [
@@ -133,7 +137,9 @@ fn test_encode_decode_string() {
 
     let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_equal(
-        decode_column::<String>(&mut encoded_data_cursor),
+        decode_column::<String>(&mut encoded_data_cursor)
+            .unwrap()
+            .map(Result::unwrap),
         [
             rle::Element {
                 element: "foo".to_string(),
@@ -168,7 +174,7 @@ fn test_encode_decode_string() {
 #[test]
 fn test_encode_decode_string_with_rle() {
     let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
-    let encoded_data = encode_column(data.into_iter(), true);
+    let encoded_data = encode_column(data.into_iter(), true).unwrap();
     assert_eq!(
         encoded_data.len(),
         [
@@ -192,7 +198,9 @@ fn test_encode_decode_string_with_rle() {
 
     let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_equal(
-        decode_column::<String>(&mut encoded_data_cursor),
+        decode_column::<String>(&mut encoded_data_cursor)
+            .unwrap()
+            .map(Result::unwrap),
         [
             rle::Element {
                 element: "foo".to_string(),

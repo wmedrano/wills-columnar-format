@@ -40,12 +40,7 @@ blocks. Compiling requires:
 2. Cargo - The Rust package manager.
 
 To generate the Rust source code, run ~M-x org-babel-tangle~ for
-=wills-columnar-format.org= within Emacs. To automatically tangle the current
-file on save, run:
-
-#+begin_src emacs-lisp :results silent
-  (add-hook 'after-save-hook #'org-babel-tangle 0 t)
-#+end_src
+=wills-columnar-format.org= within Emacs.
 
 Building and testing relies on Cargo.
 
@@ -65,9 +60,16 @@ The following code snippets may be evaluated with =C-c C-c=.
 #+begin_src emacs-lisp :results silent
   ;; Execute blocks in this file without asking for confirmation.
   (setq-local org-confirm-babel-evaluate nil)
+#+end_src
 
+#+begin_src emacs-lisp :results silent
   ;; Export the org file as a Hugo markdown post.
   (add-hook 'after-save-hook #'org-hugo-export-to-md 0 t)
+#+end_src
+
+#+begin_src emacs-lisp :results silent
+  ;; Automatically regenerate Rust code after editing this file.
+  (add-hook 'after-save-hook #'org-babel-tangle 0 t)
 #+end_src
 
 ** Dependencies
@@ -107,12 +109,41 @@ the following crates:
   use bincode::{Decode, Encode};
   use itertools::Either;
   use std::{any::TypeId, io::Read};
+
+  type Error = Box<dyn std::error::Error>;
+  type Result<T> = std::result::Result<T, Error>;
 #+end_src
 
 #+begin_src rust :tangle src/rle.rs :exports none
+  use crate::Result;
   use bincode::{Decode, Encode};
   use itertools::Itertools;
   use std::io::Read;
+
+  #[derive(Clone, Debug, PartialEq)]
+  enum RleDecodeErr {
+      NotEnoughElementsInReader {
+          expected_total: usize,
+          actual_total: usize,
+      },
+  }
+
+  impl std::error::Error for RleDecodeErr {}
+
+  impl std::fmt::Display for RleDecodeErr {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+          match self {
+              RleDecodeErr::NotEnoughElementsInReader {
+                  expected_total,
+                  actual_total,
+              } => write!(
+                  f,
+                  "expected at least {} elements but only found {}",
+                  expected_total, actual_total,
+              ),
+          }
+      }
+  }
 #+end_src
 
 #+begin_src rust :tangle src/test_bincode.rs :exports none
@@ -139,25 +170,29 @@ the following crates:
 :CUSTOM_ID: FeaturesV0Features-81e696o03tj0
 :END:
 
-V0 is roughly implemented but still requires graceful error handling, and
-bench-marking.
-
 Supports:
 - Only a single column per encode/decode.
 - Integer (both signed and unsigned) and String types.
 - Run length encoding.
 
-*** Tentative V1 Features
+*** V1 Features [WIP]
+:PROPERTIES:
+:CUSTOM_ID: FeaturesV1FeaturesWIP]-spd05de05tj0
+:END:
+
+- Benchmarking suite.
+- Efficient row skipping.
+- Multiple pages per column, required for efficient row skipping.
+
+*** Tentative V2 Features
 :PROPERTIES:
 :CUSTOM_ID: FeaturesTentativeV1Features-ppe696o03tj0
 :END:
 
+- Support multiple columns.
 - Automatically determine if RLE should be applied.
 - Dictionary encoding for better string compression.
 - Compression (like zstd or snappy) for data.
-- Multiple columns.
-- Push down filtering.
-- Split column data into blocks. Required to implement effective push down filtering.
 
 * API
 :PROPERTIES:
@@ -173,7 +208,7 @@ Supports:
 true, then run length encoding will be used.
 
 #+begin_src rust :tangle src/lib.rs
-  pub fn encode_column<Iter, T>(data: Iter, use_rle: bool) -> Vec<u8>
+  pub fn encode_column<Iter, T>(data: Iter, use_rle: bool) -> Result<Vec<u8>>
   where
       Iter: ExactSizeIterator + Iterator<Item = T>,
       T: 'static + bincode::Encode + Eq,
@@ -191,7 +226,9 @@ true, then run length encoding will be used.
 ~rle::Element<T>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
 
 #+begin_src rust :tangle src/lib.rs
-  pub fn decode_column<T>(r: &'_ mut impl std::io::Read) -> impl '_ + Iterator<Item = rle::Element<T>>
+  pub fn decode_column<T>(
+      r: &'_ mut impl std::io::Read,
+  ) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>>
   where
       T: 'static + bincode::Decode,
   {
@@ -232,7 +269,7 @@ Example with benefits:
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir=LR;
-      norle[label="a|a|a|a|a|b|b|b|a|a", fillcolor=5];
+      norle[label="a|a|a|a|a|b|b|b|a|a"];
       rle[label="(a, 4)|(b, 3)|(a, 2)"];
       norle -> rle[label="Run Length\nEncode"];
   }
@@ -251,13 +288,13 @@ elements. "rle" is actually strictly worse since it has to encode the value
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir=LR;
-      norle[label="no rle|a|b|a|b|a|b|a|b|a|b"];
-      rle[label="rle|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)", fillcolor=5];
+      norle[label="a|b|a|b|a|b|a|b|a|b"];
+      rle[label="(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)"];
       norle -> rle[label="Run Length\nEncode"];
   }
 #+end_src
 
-#+RESULTS[647d5199f683660fe752162f157cedd1b43fb26b]:
+#+RESULTS[6f8809070270cc21eee52567e5763e89a6bc9b5a]:
 [[file:rle-bad-example.png]]
 
 ** Tests
@@ -269,7 +306,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
   #[test]
   fn test_encoding_prefixed_by_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
-      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
+      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false).unwrap();
       assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
   }
 #+end_src
@@ -280,11 +317,13 @@ elements. "rle" is actually strictly worse since it has to encode the value
       T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
   {
       let data: Vec<T> = elements.to_vec();
-      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false);
+      let encoded_data: Vec<u8> = encode_column(data.into_iter(), false).unwrap();
       assert_eq!(&encoded_data[0..9], b"wmedrano0");
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
-          decode_column::<T>(&mut encoded_data_cursor),
+          decode_column::<T>(&mut encoded_data_cursor)
+              .unwrap()
+              .map(Result::unwrap),
           [
               rle::Element {
                   element: elements[0].clone(),
@@ -318,7 +357,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
   #[test]
   fn test_encode_decode_integer() {
       let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
-      let encoded_data = encode_column(data.into_iter(), false);
+      let encoded_data = encode_column(data.into_iter(), false).unwrap();
       assert_eq!(
           encoded_data.len(),
           [
@@ -335,7 +374,9 @@ elements. "rle" is actually strictly worse since it has to encode the value
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
-          decode_column::<i64>(&mut encoded_data_cursor),
+          decode_column::<i64>(&mut encoded_data_cursor)
+              .unwrap()
+              .map(Result::unwrap),
           [
               rle::Element {
                   element: -1,
@@ -378,7 +419,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
   #[test]
   fn test_encode_decode_string() {
       let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
-      let encoded_data = encode_column(data.into_iter(), false);
+      let encoded_data = encode_column(data.into_iter(), false).unwrap();
       assert_eq!(
           encoded_data.len(),
           [
@@ -395,7 +436,9 @@ elements. "rle" is actually strictly worse since it has to encode the value
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
-          decode_column::<String>(&mut encoded_data_cursor),
+          decode_column::<String>(&mut encoded_data_cursor)
+              .unwrap()
+              .map(Result::unwrap),
           [
               rle::Element {
                   element: "foo".to_string(),
@@ -430,7 +473,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
   #[test]
   fn test_encode_decode_string_with_rle() {
       let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
-      let encoded_data = encode_column(data.into_iter(), true);
+      let encoded_data = encode_column(data.into_iter(), true).unwrap();
       assert_eq!(
           encoded_data.len(),
           [
@@ -454,7 +497,9 @@ elements. "rle" is actually strictly worse since it has to encode the value
 
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
-          decode_column::<String>(&mut encoded_data_cursor),
+          decode_column::<String>(&mut encoded_data_cursor)
+              .unwrap()
+              .map(Result::unwrap),
           [
               rle::Element {
                   element: "foo".to_string(),
@@ -510,15 +555,16 @@ elements. "rle" is actually strictly worse since it has to encode the value
   fn encode_column_impl<T>(
       data: impl ExactSizeIterator + Iterator<Item = T>,
       use_rle: bool,
-  ) -> Vec<u8>
+  ) -> Result<Vec<u8>>
   where
       T: 'static + bincode::Encode + Eq,
   {
       let elements = data.len();
       let encoded_data = if use_rle {
-          encode_data_rle_impl(data.into_iter())
+          let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
+          encode_elements_as_bincode(rle_data)?
       } else {
-          encode_elements_as_bincode(data.into_iter())
+          encode_elements_as_bincode(data)?
       };
       let header = Header {
           data_type: DataType::from_type::<T>().unwrap(),
@@ -526,7 +572,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
           elements,
           data_size: encoded_data.len(),
       };
-      encode_header_and_data(MAGIC_BYTES, header, encoded_data)
+      Ok(encode_header_and_data(MAGIC_BYTES, header, encoded_data))
   }
 #+end_src
 
@@ -550,7 +596,7 @@ elements. "rle" is actually strictly worse since it has to encode the value
 
   fn decode_column_impl<T: 'static + bincode::Decode>(
       r: &'_ mut impl std::io::Read,
-  ) -> impl '_ + Iterator<Item = rle::Element<T>> {
+  ) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>> {
       let mut magic_string = [0u8; MAGIC_BYTES_LEN];
       r.read_exact(&mut magic_string).unwrap();
       assert_eq!(
@@ -565,17 +611,20 @@ elements. "rle" is actually strictly worse since it has to encode the value
           header.data_type,
           std::any::type_name::<T>(),
       );
-      if header.use_rle {
+      let iter = if header.use_rle {
           let rle_elements = rle::decode_rle_data(header.elements, r);
           Either::Left(rle_elements)
       } else {
           let elements = decode_bincode_as_elements(header.elements, r);
-          let rle_elements = elements.map(|element| rle::Element {
-              element,
-              run_length: 1,
+          let rle_elements = elements.map(|element_or_err| {
+              element_or_err.map(|element| rle::Element {
+                  element,
+                  run_length: 1,
+              })
           });
           Either::Right(rle_elements)
-      }
+      };
+      Ok(iter)
   }
 #+end_src
 
@@ -688,26 +737,27 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 #+begin_src rust :tangle src/lib.rs
   fn encode_elements_as_bincode<T: 'static + bincode::Encode>(
       data: impl Iterator<Item = T>,
-  ) -> Vec<u8> {
+  ) -> Result<Vec<u8>> {
       let mut encoded = Vec::new();
       for element in data {
-          bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG).unwrap();
+          bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG)?;
       }
-      encoded
+      Ok(encoded)
   }
 
   fn decode_bincode_as_elements<T: bincode::Decode>(
       elements: usize,
       r: &'_ mut impl Read,
-  ) -> impl '_ + Iterator<Item = T> {
+  ) -> impl '_ + Iterator<Item = Result<T>> {
       let mut elements = elements;
-      std::iter::from_fn(move || -> Option<T> {
+      std::iter::from_fn(move || -> Option<Result<T>> {
           if elements == 0 {
               return None;
           }
           elements -= 1;
-          let element: T = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-          Some(element)
+          let element_or_err: Result<T> =
+              bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).map_err(std::convert::Into::into);
+          Some(element_or_err)
       })
   }
 #+end_src
@@ -810,17 +860,10 @@ To encode an iterator of type ~T~ with RLE, it is first converted into an
 iterator of type ~rle::Element<T>~. It is then used to encode the run length
 encoded vector into bytes.
 
-#+begin_src rust :tangle src/lib.rs
-  fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(
-      data: impl Iterator<Item = T>,
-  ) -> Vec<u8> {
-      let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
-      encode_elements_as_bincode(rle_data)
-  }
-#+end_src
-
 #+begin_src rust :tangle src/rle.rs
-  pub fn encode_iter<T: 'static + bincode::Encode + Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
+  pub fn encode_iter<T: 'static + bincode::Encode + Eq>(
+      data: impl Iterator<Item = T>,
+  ) -> impl Iterator<Item = Element<T>> {
       data.peekable().batching(|iter| -> Option<Element<T>> {
           let element = iter.next()?;
           let mut run_length = 1;
@@ -839,17 +882,27 @@ encoded vector into bytes.
   pub fn decode_rle_data<T: 'static + bincode::Decode>(
       elements: usize,
       r: &'_ mut impl Read,
-  ) -> impl '_ + Iterator<Item = Element<T>> {
-      let mut elements = elements;
+  ) -> impl '_ + Iterator<Item = Result<Element<T>>> {
+      let mut elements_left_to_read = elements;
       std::iter::from_fn(move || {
-          if elements == 0 {
+          if elements_left_to_read == 0 {
               return None;
           }
           let rle_element: Element<T> =
-              bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG).unwrap();
-          assert!(rle_element.run_length as usize <= elements,);
-          elements -= rle_element.run_length as usize;
-          Some(rle_element)
+              match bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG) {
+                  Ok(e) => e,
+                  Err(err) => return Some(Err(err.into())),
+              };
+          if rle_element.run_length as usize > elements_left_to_read {
+              let actual_total = elements - elements_left_to_read + rle_element.run_length as usize;
+              let err = RleDecodeErr::NotEnoughElementsInReader {
+                  expected_total: elements,
+                  actual_total,
+              };
+              return Some(Err(err.into()));
+          }
+          elements_left_to_read -= rle_element.run_length as usize;
+          Some(Ok(rle_element))
       })
   }
 #+end_src

@@ -1,7 +1,33 @@
 // [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:4]]
+use crate::Result;
 use bincode::{Decode, Encode};
 use itertools::Itertools;
 use std::io::Read;
+
+#[derive(Clone, Debug, PartialEq)]
+enum RleDecodeErr {
+    NotEnoughElementsInReader {
+        expected_total: usize,
+        actual_total: usize,
+    },
+}
+
+impl std::error::Error for RleDecodeErr {}
+
+impl std::fmt::Display for RleDecodeErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RleDecodeErr::NotEnoughElementsInReader {
+                expected_total,
+                actual_total,
+            } => write!(
+                f,
+                "expected at least {} elements but only found {}",
+                expected_total, actual_total,
+            ),
+        }
+    }
+}
 // Dependencies:4 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:2]]
@@ -16,8 +42,10 @@ pub struct Element<T> {
 }
 // Run Length Encoding:2 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:4]]
-pub fn encode_iter<T: 'static + bincode::Encode + Eq>(data: impl Iterator<Item = T>) -> impl Iterator<Item=Element<T>> {
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:3]]
+pub fn encode_iter<T: 'static + bincode::Encode + Eq>(
+    data: impl Iterator<Item = T>,
+) -> impl Iterator<Item = Element<T>> {
     data.peekable().batching(|iter| -> Option<Element<T>> {
         let element = iter.next()?;
         let mut run_length = 1;
@@ -30,23 +58,33 @@ pub fn encode_iter<T: 'static + bincode::Encode + Eq>(data: impl Iterator<Item =
         })
     })
 }
-// Run Length Encoding:4 ends here
+// Run Length Encoding:3 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:5]]
+// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:4]]
 pub fn decode_rle_data<T: 'static + bincode::Decode>(
     elements: usize,
     r: &'_ mut impl Read,
-) -> impl '_ + Iterator<Item = Element<T>> {
-    let mut elements = elements;
+) -> impl '_ + Iterator<Item = Result<Element<T>>> {
+    let mut elements_left_to_read = elements;
     std::iter::from_fn(move || {
-        if elements == 0 {
+        if elements_left_to_read == 0 {
             return None;
         }
         let rle_element: Element<T> =
-            bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG).unwrap();
-        assert!(rle_element.run_length as usize <= elements,);
-        elements -= rle_element.run_length as usize;
-        Some(rle_element)
+            match bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG) {
+                Ok(e) => e,
+                Err(err) => return Some(Err(err.into())),
+            };
+        if rle_element.run_length as usize > elements_left_to_read {
+            let actual_total = elements - elements_left_to_read + rle_element.run_length as usize;
+            let err = RleDecodeErr::NotEnoughElementsInReader {
+                expected_total: elements,
+                actual_total,
+            };
+            return Some(Err(err.into()));
+        }
+        elements_left_to_read -= rle_element.run_length as usize;
+        Some(Ok(rle_element))
     })
 }
-// Run Length Encoding:5 ends here
+// Run Length Encoding:4 ends here

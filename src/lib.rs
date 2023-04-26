@@ -11,10 +11,13 @@ mod test_rle;
 use bincode::{Decode, Encode};
 use itertools::Either;
 use std::{any::TypeId, io::Read};
+
+type Error = Box<dyn std::error::Error>;
+type Result<T> = std::result::Result<T, Error>;
 // Dependencies:3 ends here
 
 // [[file:../wills-columnar-format.org::#APIEncoding-w0g696o03tj0][Encoding:1]]
-pub fn encode_column<Iter, T>(data: Iter, use_rle: bool) -> Vec<u8>
+pub fn encode_column<Iter, T>(data: Iter, use_rle: bool) -> Result<Vec<u8>>
 where
     Iter: ExactSizeIterator + Iterator<Item = T>,
     T: 'static + bincode::Encode + Eq,
@@ -24,7 +27,9 @@ where
 // Encoding:1 ends here
 
 // [[file:../wills-columnar-format.org::#APIDecoding-npg696o03tj0][Decoding:1]]
-pub fn decode_column<T>(r: &'_ mut impl std::io::Read) -> impl '_ + Iterator<Item = rle::Element<T>>
+pub fn decode_column<T>(
+    r: &'_ mut impl std::io::Read,
+) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>>
 where
     T: 'static + bincode::Decode,
 {
@@ -36,15 +41,16 @@ where
 fn encode_column_impl<T>(
     data: impl ExactSizeIterator + Iterator<Item = T>,
     use_rle: bool,
-) -> Vec<u8>
+) -> Result<Vec<u8>>
 where
     T: 'static + bincode::Encode + Eq,
 {
     let elements = data.len();
     let encoded_data = if use_rle {
-        encode_data_rle_impl(data.into_iter())
+        let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
+        encode_elements_as_bincode(rle_data)?
     } else {
-        encode_elements_as_bincode(data.into_iter())
+        encode_elements_as_bincode(data)?
     };
     let header = Header {
         data_type: DataType::from_type::<T>().unwrap(),
@@ -52,7 +58,7 @@ where
         elements,
         data_size: encoded_data.len(),
     };
-    encode_header_and_data(MAGIC_BYTES, header, encoded_data)
+    Ok(encode_header_and_data(MAGIC_BYTES, header, encoded_data))
 }
 // Format Overview:2 ends here
 
@@ -76,7 +82,7 @@ fn encode_header_and_data(
 
 fn decode_column_impl<T: 'static + bincode::Decode>(
     r: &'_ mut impl std::io::Read,
-) -> impl '_ + Iterator<Item = rle::Element<T>> {
+) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>> {
     let mut magic_string = [0u8; MAGIC_BYTES_LEN];
     r.read_exact(&mut magic_string).unwrap();
     assert_eq!(
@@ -91,17 +97,20 @@ fn decode_column_impl<T: 'static + bincode::Decode>(
         header.data_type,
         std::any::type_name::<T>(),
     );
-    if header.use_rle {
+    let iter = if header.use_rle {
         let rle_elements = rle::decode_rle_data(header.elements, r);
         Either::Left(rle_elements)
     } else {
         let elements = decode_bincode_as_elements(header.elements, r);
-        let rle_elements = elements.map(|element| rle::Element {
-            element,
-            run_length: 1,
+        let rle_elements = elements.map(|element_or_err| {
+            element_or_err.map(|element| rle::Element {
+                element,
+                run_length: 1,
+            })
         });
         Either::Right(rle_elements)
-    }
+    };
+    Ok(iter)
 }
 // Format Overview:3 ends here
 
@@ -175,35 +184,27 @@ pub enum DataType {
 // [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:2]]
 fn encode_elements_as_bincode<T: 'static + bincode::Encode>(
     data: impl Iterator<Item = T>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>> {
     let mut encoded = Vec::new();
     for element in data {
-        bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG).unwrap();
+        bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG)?;
     }
-    encoded
+    Ok(encoded)
 }
 
 fn decode_bincode_as_elements<T: bincode::Decode>(
     elements: usize,
     r: &'_ mut impl Read,
-) -> impl '_ + Iterator<Item = T> {
+) -> impl '_ + Iterator<Item = Result<T>> {
     let mut elements = elements;
-    std::iter::from_fn(move || -> Option<T> {
+    std::iter::from_fn(move || -> Option<Result<T>> {
         if elements == 0 {
             return None;
         }
         elements -= 1;
-        let element: T = bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap();
-        Some(element)
+        let element_or_err: Result<T> =
+            bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).map_err(std::convert::Into::into);
+        Some(element_or_err)
     })
 }
 // Basic Encoding:2 ends here
-
-// [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:3]]
-fn encode_data_rle_impl<T: 'static + bincode::Encode + Eq>(
-    data: impl Iterator<Item = T>,
-) -> Vec<u8> {
-    let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
-    encode_elements_as_bincode(rle_data)
-}
-// Run Length Encoding:3 ends here
