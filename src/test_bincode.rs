@@ -2,15 +2,15 @@
 use crate::rle;
 // Dependencies:5 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:3]]
+// [[file:../wills-columnar-format.org::#DataEncodingBasicEncodingTests-sfz7wx714tj0][Tests:1]]
 fn encoded_size<T: bincode::Encode>(element: T) -> usize {
     bincode::encode_to_vec(element, bincode::config::standard())
         .unwrap()
         .len()
 }
-// Basic Encoding:3 ends here
+// Tests:1 ends here
 
-// [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:4]]
+// [[file:../wills-columnar-format.org::#DataEncodingBasicEncodingTests-sfz7wx714tj0][Tests:2]]
 #[test]
 fn test_encoding_size() {
     // Small numbers are encoded efficiently.
@@ -51,4 +51,4 @@ fn test_encoding_size() {
     assert_eq!(encoded_size::<&[u8]>(&[1u8, 2, 3]), 4);
     assert_eq!(encoded_size(vec![1u8, 2, 3]), 4);
 }
-// Basic Encoding:4 ends here
+// Tests:2 ends here
