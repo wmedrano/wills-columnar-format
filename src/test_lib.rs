@@ -63,10 +63,10 @@ fn test_encode_decode_integer() {
         encoded_data.len(),
         [
             9, // magic_bytes
-            1, // u8 header:data_type
-            1, // u8 header:use_rle
-            1, // varint header:element_count
-            1, // varint header:data_size
+            1, // u8 file_header:data_type
+            1, // u8 file_header:use_rle
+            1, // varint file_header:element_count
+            1, // varint file_header:data_size
             8, // data contains 8 elements of varint with size 1.
         ]
         .iter()
@@ -125,10 +125,10 @@ fn test_encode_decode_string() {
         encoded_data.len(),
         [
             9,  // magic_bytes
-            1,  // u8 header:data_type
-            1,  // u8 header:use_rle
-            1,  // varint header:element_count
-            1,  // varint header:data_size
+            1,  // u8 file_header:data_type
+            1,  // u8 file_header:use_rle
+            1,  // varint file_header:element_count
+            1,  // varint file_header:data_size
             24, // data contains 8 elements of varint with size 1.
         ]
         .iter()
@@ -179,10 +179,10 @@ fn test_encode_decode_string_with_rle() {
         encoded_data.len(),
         [
             9, // magic_bytes
-            1, // u8 header:data_type
-            1, // u8 header:use_rle
-            1, // varint header:element_count
-            1, // varint header:data_size
+            1, // u8 file_header:data_type
+            1, // u8 file_header:use_rle
+            1, // varint file_header:element_count
+            1, // varint file_header:data_size
             4, // data:element_1:rle_element string "foo" of encoding size 4.
             1, // data:element_1:rle_run_length varint of size 1.
             4, // data:element_2:rle_element string "bar" of encoding size 4.

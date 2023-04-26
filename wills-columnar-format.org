@@ -362,10 +362,10 @@ elements. "rle" is actually strictly worse since it has to encode the value
           encoded_data.len(),
           [
               9, // magic_bytes
-              1, // u8 header:data_type
-              1, // u8 header:use_rle
-              1, // varint header:element_count
-              1, // varint header:data_size
+              1, // u8 file_header:data_type
+              1, // u8 file_header:use_rle
+              1, // varint file_header:element_count
+              1, // varint file_header:data_size
               8, // data contains 8 elements of varint with size 1.
           ]
           .iter()
@@ -424,10 +424,10 @@ elements. "rle" is actually strictly worse since it has to encode the value
           encoded_data.len(),
           [
               9,  // magic_bytes
-              1,  // u8 header:data_type
-              1,  // u8 header:use_rle
-              1,  // varint header:element_count
-              1,  // varint header:data_size
+              1,  // u8 file_header:data_type
+              1,  // u8 file_header:use_rle
+              1,  // varint file_header:element_count
+              1,  // varint file_header:data_size
               24, // data contains 8 elements of varint with size 1.
           ]
           .iter()
@@ -478,10 +478,10 @@ elements. "rle" is actually strictly worse since it has to encode the value
           encoded_data.len(),
           [
               9, // magic_bytes
-              1, // u8 header:data_type
-              1, // u8 header:use_rle
-              1, // varint header:element_count
-              1, // varint header:data_size
+              1, // u8 file_header:data_type
+              1, // u8 file_header:use_rle
+              1, // varint file_header:element_count
+              1, // varint file_header:data_size
               4, // data:element_1:rle_element string "foo" of encoding size 4.
               1, // data:element_1:rle_run_length varint of size 1.
               4, // data:element_2:rle_element string "bar" of encoding size 4.
@@ -537,13 +537,13 @@ elements. "rle" is actually strictly worse since it has to encode the value
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir=LR;
-      overview[label="<magicbytes> Magic Bytes|<header>Header|<data>Data..."];
+      overview[label="<magicbytes> Magic Bytes|<file_header>FileHeader|<data>Data..."];
       overview:magicbytes -> magicbytes;
-      overview:header -> header;
+      overview:file_header -> file_header;
       overview:data -> data;
 
       magicbytes[label="\"wmedrano0\""];
-      header[label="u8:data_type | u8:use_rle | varint:element_count | varint:data_size"];
+      file_header[label="u8:data_type | u8:use_rle | varint:element_count | varint:data_size"];
       data[label="bincoded:element_1|bincoded:element_2|...|bincoded:element_n"];
   }
 #+end_src
@@ -566,30 +566,30 @@ elements. "rle" is actually strictly worse since it has to encode the value
       } else {
           encode_elements_as_bincode(data)?
       };
-      let header = Header {
+      let file_header = FileHeader {
           data_type: DataType::from_type::<T>().unwrap(),
           use_rle,
           elements,
           data_size: encoded_data.len(),
       };
-      Ok(encode_header_and_data(MAGIC_BYTES, header, encoded_data))
+      Ok(encode_file_header_and_data(MAGIC_BYTES, file_header, encoded_data))
   }
 #+end_src
 
 #+begin_src rust :tangle src/lib.rs :exports none
   const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
-  fn encode_header_and_data(
+  fn encode_file_header_and_data(
       magic_bytes: &'static [u8],
-      header: Header,
+      file_header: FileHeader,
       encoded_data: Vec<u8>,
   ) -> Vec<u8> {
-      assert_eq!(header.data_size, encoded_data.len());
+      assert_eq!(file_header.data_size, encoded_data.len());
       Vec::from_iter(
           magic_bytes
               .iter()
               .copied()
-              .chain(header.encode())
+              .chain(file_header.encode())
               .chain(encoded_data.iter().copied()),
       )
   }
@@ -604,18 +604,18 @@ elements. "rle" is actually strictly worse since it has to encode the value
           "Expected magic string {:?}.",
           MAGIC_BYTES
       );
-      let header = Header::decode(r);
+      let file_header = FileHeader::decode(r);
       assert!(
-          header.data_type.is_supported::<T>(),
+          file_header.data_type.is_supported::<T>(),
           "Format of expected type {:?} does not support {:?}.",
-          header.data_type,
+          file_header.data_type,
           std::any::type_name::<T>(),
       );
-      let iter = if header.use_rle {
-          let rle_elements = rle::decode_rle_data(header.elements, r);
+      let iter = if file_header.use_rle {
+          let rle_elements = rle::decode_rle_data(file_header.elements, r);
           Either::Left(rle_elements)
       } else {
-          let elements = decode_bincode_as_elements(header.elements, r);
+          let elements = decode_bincode_as_elements(file_header.elements, r);
           let rle_elements = elements.map(|element_or_err| {
               element_or_err.map(|element| rle::Element {
                   element,
@@ -640,15 +640,15 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
   const MAGIC_BYTES_LEN: usize = 9;
 #+end_src
 
-** Header
+** File Header
 :PROPERTIES:
 :CUSTOM_ID: FormatSpecificationHeader-3tk696o03tj0
 :END:
 
-The header contains a Bincode encoded struct:
+The file_header contains a Bincode encoded struct:
 
 #+begin_src rust :exports none :tangle src/lib.rs
-  impl Header {
+  impl FileHeader {
       const CONFIGURATION: bincode::config::Configuration = bincode::config::standard();
   }
 
@@ -682,12 +682,12 @@ The header contains a Bincode encoded struct:
       }
   }
 
-  impl Header {
+  impl FileHeader {
       fn encode(&self) -> Vec<u8> {
           bincode::encode_to_vec(self, Self::CONFIGURATION).unwrap()
       }
 
-      fn decode(r: &mut impl std::io::Read) -> Header {
+      fn decode(r: &mut impl std::io::Read) -> Self {
           bincode::decode_from_std_read(r, Self::CONFIGURATION).unwrap()
       }
   }
