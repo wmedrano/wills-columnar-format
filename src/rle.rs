@@ -40,6 +40,15 @@ pub struct Element<T> {
     // efficient for smaller sizes.
     pub run_length: u64,
 }
+
+impl<T> Element<T> {
+    pub fn single(element: T) -> Self {
+        Element {
+            element,
+            run_length: 1,
+        }
+    }
+}
 // Run Length Encoding:2 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding:3]]
