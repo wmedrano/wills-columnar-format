@@ -12,8 +12,6 @@
 :CUSTOM_ID: Introduction-h6a696o03tj0
 :END:
 
-#+toc
-
 *Will's Columnar Format V0*
 
 [[https://wmedrano.dev/literate-programs/wills-columnar-format][Will's Columnar Format]] is a columnar format made by will.s.medrano@gmail.com. It
@@ -271,7 +269,7 @@ does not repeat, then it is strictly worse.
 
 Example where run length encoding yields benefits:
 
-#+begin_src dot :file rle-good-example.png :cache yes
+#+begin_src dot :file rle-good-example.png :cache yes :exports results
   digraph RleGoodExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -290,7 +288,7 @@ below, notice how both normal and run length encoding have the same number of
 elements. run length encoding is actually strictly worse since it has to encode
 the value *and* the run length.
 
-#+begin_src dot :file rle-bad-example.png :cache yes
+#+begin_src dot :file rle-bad-example.png :cache yes :exports results
   digraph RleBadExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -550,7 +548,7 @@ the value *and* the run length.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-#+begin_src dot :file format-diagram.png :cache yes
+#+begin_src dot :file format-diagram.png :cache yes :exports results
   digraph FormatOverview {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -660,7 +658,7 @@ the value *and* the run length.
 
 The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
-#+begin_src dot :file format-diagram-magicbytes.png :cache yes
+#+begin_src dot :file format-diagram-magicbytes.png :cache yes :exports results
   digraph MagicBytes {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -686,7 +684,7 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
 The header contains a Bincode encoded struct.
 
-#+begin_src dot :file format-diagram-header.png :cache yes
+#+begin_src dot :file format-diagram-header.png :cache yes :exports results
   digraph Header {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -760,7 +758,7 @@ The header contains a Bincode encoded struct.
 Pages contain actual data for the column. Each page encodes elements using
 Bincode. The number of elements within the page are stored in the footer.
 
-#+begin_src dot :file format-diagram-pages.png :cache yes
+#+begin_src dot :file format-diagram-pages.png :cache yes :exports results
   digraph Pages {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -788,7 +786,7 @@ The footer contains information about the pages. The main details are:
   sum of all the run_lengths for run length encoded columns. For example, the
   string ~"foo"~ repeated 10 times will count as 10 elements.
 
-#+begin_src dot :file format-diagram-footer.png :cache yes
+#+begin_src dot :file format-diagram-footer.png :cache yes :exports results
   digraph Footer {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -801,7 +799,7 @@ The footer contains information about the pages. The main details are:
   }
 #+end_src
 
-#+RESULTS[75d895baf1bd548d50f1c7a09353be7840588f17]:
+#+RESULTS[e04d7b7701672963ef29b2a144dad122a206e62e]:
 [[file:format-diagram-footer.png]]
 
 #+begin_src rust :tangle src/lib.rs
@@ -830,7 +828,7 @@ The footer contains information about the pages. The main details are:
 The data consists of a sequence of encoded data. Encoding happens using the Rust
 [[https:github.com/bincode-org/bincode][Bincode]] package to encode/decode each data element.
 
-#+begin_src dot :file basic-encoding.png
+#+begin_src dot :file basic-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -922,7 +920,7 @@ tuple. ~(element, run_length)~ where ~element~ contains the data and the
 to determine if RLE has benefits is to test it in practice. That is to say, try
 using both RLE and no RLE to see which one has the smaller size.
 
-#+begin_src dot :file rle-encoding.png
+#+begin_src dot :file rle-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
