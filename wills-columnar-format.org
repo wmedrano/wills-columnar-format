@@ -245,20 +245,6 @@ Supports:
 :CUSTOM_ID: OptimizationTips-45i696o03tj0
 :END:
 
-*** Sorting Data
-:PROPERTIES:
-:CUSTOM_ID: OptimizationTipsSortingData-rsi696o03tj0
-:END:
-
-If:
-- Order does not matter.
-- There are lots of repeated values.
-
-If the above are true, try sorting and enabling run length encoding. Run length
-encoding is efficient at storing data that is heavily repeated. By sorting, the
-data will have longer runs of consecutive repeated values. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length
-Encoding]] for technical details.
-
 *** RLE
 :PROPERTIES:
 :CUSTOM_ID: APIOptimizationTipsRLE-0w1ln7714tj0
@@ -269,7 +255,7 @@ does not repeat, then it is strictly worse.
 
 Example where run length encoding yields benefits:
 
-#+begin_src dot :file rle-good-example.png :cache yes :exports results
+#+begin_src dot :file rle-good-example.png :exports results
   digraph RleGoodExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -280,7 +266,7 @@ Example where run length encoding yields benefits:
   }
 #+end_src
 
-#+RESULTS[67b646d28cb3764f466cfea308f3fd091ee1b05f]:
+#+RESULTS:
 [[file:rle-good-example.png]]
 
 In the worst case when there are no runs, RLE is actually worse. In the example
@@ -288,7 +274,7 @@ below, notice how both normal and run length encoding have the same number of
 elements. run length encoding is actually strictly worse since it has to encode
 the value *and* the run length.
 
-#+begin_src dot :file rle-bad-example.png :cache yes :exports results
+#+begin_src dot :file rle-bad-example.png :exports results
   digraph RleBadExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -299,8 +285,22 @@ the value *and* the run length.
   }
 #+end_src
 
-#+RESULTS[d463d4e039b0cf7aa4647ff8b1f4781306ce0f5e]:
+#+RESULTS:
 [[file:rle-bad-example.png]]
+
+*** Sorting Data
+:PROPERTIES:
+:CUSTOM_ID: OptimizationTipsSortingData-rsi696o03tj0
+:END:
+
+- Order does not matter.
+- There are lots of repeated values.
+
+If the above are true, try sorting and enabling run length encoding. Run length
+encoding is efficient at storing data that is heavily repeated. By sorting, the
+data will have longer runs of consecutive repeated values. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length
+Encoding]] for technical details.
+
 
 ** Tests
 :PROPERTIES:
@@ -548,7 +548,7 @@ the value *and* the run length.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-#+begin_src dot :file format-diagram.png :cache yes :exports results
+#+begin_src dot :file format-diagram.png :exports results
   digraph FormatOverview {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -557,7 +557,7 @@ the value *and* the run length.
   }
 #+end_src
 
-#+RESULTS[3e65a3e79abae2778d8dc8f9338bf18001415060]:
+#+RESULTS:
 [[file:format-diagram.png]]
 
 #+begin_src rust :tangle src/lib.rs
@@ -658,7 +658,7 @@ the value *and* the run length.
 
 The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
-#+begin_src dot :file format-diagram-magicbytes.png :cache yes :exports results
+#+begin_src dot :file format-diagram-magicbytes.png :exports results
   digraph MagicBytes {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -669,8 +669,8 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
   }
 #+end_src
 
-#+RESULTS[5c49225846057d654f0f6c08fa97465ea7695db1]:
-[[file:format-diagram-header.png]]
+#+RESULTS:
+[[file:format-diagram-magicbytes.png]]
 
 #+begin_src rust :tangle src/lib.rs
   const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
@@ -684,7 +684,7 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
 The header contains a Bincode encoded struct.
 
-#+begin_src dot :file format-diagram-header.png :cache yes :exports results
+#+begin_src dot :file format-diagram-header.png :exports results
   digraph Header {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -695,7 +695,7 @@ The header contains a Bincode encoded struct.
   }
 #+end_src
 
-#+RESULTS[f1f5b00420f73b5ab88bbb52aa7faec66297c698]:
+#+RESULTS:
 [[file:format-diagram-header.png]]
 
 #+begin_src rust :exports none :tangle src/lib.rs
@@ -758,7 +758,7 @@ The header contains a Bincode encoded struct.
 Pages contain actual data for the column. Each page encodes elements using
 Bincode. The number of elements within the page are stored in the footer.
 
-#+begin_src dot :file format-diagram-pages.png :cache yes :exports results
+#+begin_src dot :file format-diagram-pages.png :exports results
   digraph Pages {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -771,7 +771,7 @@ Bincode. The number of elements within the page are stored in the footer.
   }
 #+end_src
 
-#+RESULTS[3ba2a502fbba14ae59dbf3f90180e7f7e13d14b6]:
+#+RESULTS:
 [[file:format-diagram-pages.png]]
 
 ** File Footer
@@ -786,7 +786,7 @@ The footer contains information about the pages. The main details are:
   sum of all the run_lengths for run length encoded columns. For example, the
   string ~"foo"~ repeated 10 times will count as 10 elements.
 
-#+begin_src dot :file format-diagram-footer.png :cache yes :exports results
+#+begin_src dot :file format-diagram-footer.png :exports results
   digraph Footer {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -799,7 +799,7 @@ The footer contains information about the pages. The main details are:
   }
 #+end_src
 
-#+RESULTS[e04d7b7701672963ef29b2a144dad122a206e62e]:
+#+RESULTS:
 [[file:format-diagram-footer.png]]
 
 #+begin_src rust :tangle src/lib.rs
