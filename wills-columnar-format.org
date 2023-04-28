@@ -1,6 +1,5 @@
 :PROPERTIES:
 :header-args: :comments link
-:eval: (message "fuck")
 :END:
 #+title: Will's Columnar Format
 #+author: Will Medrano
