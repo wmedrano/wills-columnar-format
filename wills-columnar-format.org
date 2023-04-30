@@ -555,6 +555,13 @@ Encoding]] for technical details.
   }
 #+END_SRC
 
+* TODO Benchmarks
+:PROPERTIES:
+:CUSTOM_ID: Benchmarks-32c8xx41atj0
+:END:
+
+Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney's]] columnar file performance write-up for inspiration.
+
 * Format Specification
 :PROPERTIES:
 :CUSTOM_ID: FormatSpecification-zfj696o03tj0
