@@ -120,41 +120,32 @@ the following crates:
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/rle.rs :exports none
-  use crate::Result;
   use bincode::{Decode, Encode};
   use itertools::Itertools;
-  use std::io::Read;
-
-  #[derive(Clone, Debug, PartialEq)]
-  enum RleDecodeErr {
-      NotEnoughValuesInReader {
-          expected_total: usize,
-          actual_total: usize,
-      },
-  }
-
-  impl std::error::Error for RleDecodeErr {}
-
-  impl std::fmt::Display for RleDecodeErr {
-      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-          match self {
-              RleDecodeErr::NotEnoughValuesInReader {
-                  expected_total,
-                  actual_total,
-              } => write!(
-                  f,
-                  "expected at least {} values but only found {}",
-                  expected_total, actual_total,
-              ),
-          }
-      }
-  }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/decode.rs :exports none
   use std::io::{Read, Seek};
 
-  use crate::{rle, Footer, Result, BINCODE_DATA_CONFIG};
+  use crate::{rle, DataType, Footer, Result, BINCODE_DATA_CONFIG};
+
+  #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+  struct UnsupportedDataType {
+      expected: DataType,
+      actual: &'static str,
+  }
+
+  impl std::error::Error for UnsupportedDataType {}
+
+  impl std::fmt::Display for UnsupportedDataType {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+          write!(
+              f,
+              "Expected format of type {:?} but got {}",
+              self.expected, self.actual
+          )
+      }
+  }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/encode.rs :exports none
@@ -170,6 +161,7 @@ the following crates:
 #+BEGIN_SRC rust :tangle src/test_lib.rs :exports none
   use super::*;
   use itertools::assert_equal;
+  use std::io::Cursor;
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_rle.rs :exports none
@@ -225,9 +217,9 @@ Supports:
 ~use_rle~ is true, then run length encoding will be used.
 
 #+BEGIN_SRC rust :tangle src/lib.rs
-  pub fn encode_column<Iter, T, W>(data: Iter, w: &mut W, use_rle: bool) -> Result<()>
+  pub fn encode_column<Iter, T, W>(data: Iter, w: &mut W, use_rle: bool) -> Result<Footer>
   where
-      Iter: ExactSizeIterator + Iterator<Item = T>,
+      Iter: Iterator<Item = T>,
       T: 'static + bincode::Encode + Eq,
       W: Write,
   {
@@ -244,13 +236,18 @@ Supports:
 ~Result<rle::Values<T>>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
 
 #+BEGIN_SRC rust :tangle src/lib.rs
-  pub fn decode_column<T>(
-      r: &'_ mut (impl Read + Seek),
-  ) -> Result<impl '_ + Iterator<Item = Result<rle::Values<T>>>>
+  pub fn decode_column<'a, T>(
+      r: impl 'a + Read + Seek,
+  ) -> Result<impl 'a + Iterator<Item = Result<rle::Values<T>>>>
   where
       T: 'static + bincode::Decode,
   {
       decode::decode_column_impl(r)
+  }
+
+  pub fn decode_footer(r: impl Read + Seek) -> Result<Footer> {
+      let mut r = r;
+      decode::decode_footer_impl(&mut r)
   }
 #+END_SRC
 
@@ -329,9 +326,8 @@ Encoding]] for technical details.
       let data: Vec<T> = values.to_vec();
       let mut encoded_data = Vec::new();
       encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
-      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
-          decode_column::<T>(&mut encoded_data_cursor)
+          decode_column::<T>(Cursor::new(encoded_data))
               .unwrap()
               .map(Result::unwrap),
           [
@@ -385,7 +381,7 @@ Encoding]] for technical details.
           .sum()
       );
 
-      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      let mut encoded_data_cursor = Cursor::new(encoded_data);
       assert_equal(
           decode_column::<i64>(&mut encoded_data_cursor)
               .unwrap()
@@ -450,7 +446,7 @@ Encoding]] for technical details.
           .sum()
       );
 
-      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      let mut encoded_data_cursor = Cursor::new(encoded_data);
       assert_equal(
           decode_column::<String>(&mut encoded_data_cursor)
               .unwrap()
@@ -490,7 +486,7 @@ Encoding]] for technical details.
   fn test_encode_decode_string_with_rle() {
       let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
       let mut encoded_data = Vec::new();
-      encode_column(data.into_iter(), &mut encoded_data, true).unwrap();
+      let footer = encode_column(data.into_iter(), &mut encoded_data, true).unwrap();
       assert_eq!(
           encoded_data.len(),
           [
@@ -511,10 +507,12 @@ Encoding]] for technical details.
               8, // u64 footer_size
           ]
           .iter()
-          .sum()
+          .sum(),
+          "{:?}",
+          footer
       );
 
-      let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+      let mut encoded_data_cursor = Cursor::new(encoded_data);
       assert_equal(
           decode_column::<String>(&mut encoded_data_cursor)
               .unwrap()
@@ -538,6 +536,38 @@ Encoding]] for technical details.
               },
           ],
       );
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs
+  #[test]
+  fn encode_on_many_values_outputs_several_pages() {
+      let values = std::iter::repeat(-1i64).take(1_000_000);
+      let mut encoded_data = Vec::new();
+      let footer = encode_column(values, &mut encoded_data, false).unwrap();
+      assert!(footer.pages.len() > 1, "{:?}", footer);
+      assert_eq!(decode_footer(Cursor::new(&encoded_data)).unwrap(), footer);
+      assert_equal(
+          decode_column::<i64>(Cursor::new(&encoded_data))
+              .unwrap()
+              .map(Result::unwrap),
+          std::iter::repeat(rle::Values::single(-1i64)).take(1_000_000),
+      );
+  }
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_lib.rs
+  #[test]
+  fn decode_on_wrong_data_type_fails() {
+      // SignedInteger.
+      let values = std::iter::once(-1i64);
+      let mut encoded_data = Vec::new();
+      encode_column(values, &mut encoded_data, false).unwrap();
+
+      assert!(decode_column::<u64>(Cursor::new(&encoded_data)).is_err());
+      assert!(decode_column::<String>(Cursor::new(&encoded_data)).is_err());
+      assert!(decode_column::<i8>(Cursor::new(&encoded_data)).is_err());
+      assert!(decode_column::<u8>(Cursor::new(&encoded_data)).is_err());
   }
 #+END_SRC
 
@@ -573,60 +603,66 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
 #+BEGIN_SRC rust :tangle src/encode.rs
   pub fn encode_column_impl<T>(
       w: &mut impl Write,
-      values_iter: impl ExactSizeIterator + Iterator<Item = T>,
+      values_iter: impl Iterator<Item = T>,
       use_rle: bool,
-  ) -> Result<()>
+  ) -> Result<Footer>
   where
       T: 'static + bincode::Encode + Eq,
   {
-      let values = values_iter.len();
       // TODO: Return an error.
-      let data_type = DataType::from_type::<T>().unwrap();
-      // TODO: Use multiple pages instead of writing to a single page.
-      let encoding = if use_rle {
-          let rle_data /*: impl Iterator<Item=rle::Values<T>>*/ = rle::encode_iter(values_iter);
-          encode_values_as_bincode(rle_data)?
-      } else {
-          encode_values_as_bincode(values_iter)?
+      let data_type = DataType::from_type::<T>().expect("unsupported data type");
+      let mut values_iter = values_iter;
+
+      let mut pages = Vec::new();
+      let mut file_offset = 0;
+      loop {
+          let target_encoding_size = 2048;
+          let encoding =
+              encode_values_as_bincode(&mut values_iter, file_offset, target_encoding_size, use_rle)?;
+          if encoding.encoded_values.is_empty() {
+              break;
+          } else {
+              file_offset += w.write(encoding.encoded_values.as_slice())? as i64;
+              pages.push(encoding.page_info);
+          }
+      }
+      let footer = Footer {
+          data_type,
+          use_rle,
+          pages,
       };
-      w.write(encoding.encoded_values.as_slice())?;
-      let footer_size = bincode::encode_into_std_write(
-          Footer {
-              data_type,
-              use_rle,
-              pages: vec![PageInfo {
-                  file_offset: 0,
-                  values_count: values,
-                  encoded_values_count: encoding.values_count,
-              }],
-          },
-          w,
-          BINCODE_DATA_CONFIG,
-      )? as u64;
+      let footer_size = bincode::encode_into_std_write(&footer, w, BINCODE_DATA_CONFIG)? as u64;
       w.write(&footer_size.to_le_bytes())?;
-      Ok(())
+      Ok(footer)
   }
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/decode.rs :exports none
-  pub fn decode_column_impl<T: 'static + bincode::Decode>(
-      r: impl Read + Seek,
-  ) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
+  pub fn decode_footer_impl(r: &mut (impl Read + Seek)) -> Result<Footer> {
       let mut r = r;
-      let data_start = r.stream_position()?;
       r.seek(std::io::SeekFrom::End(-8))?;
       let footer_length_bytes = bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)?;
       let footer_length = u64::from_le_bytes(footer_length_bytes);
       r.seek(std::io::SeekFrom::End(-8 - footer_length as i64))?;
       let footer: Footer = bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)?;
+      Ok(footer)
+  }
+
+  pub fn decode_column_impl<T: 'static + bincode::Decode>(
+      r: impl Read + Seek,
+  ) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
+      let mut r = r;
+      let data_start = r.stream_position()?;
+      let footer = decode_footer_impl(&mut r)?;
       r.seek(std::io::SeekFrom::Start(data_start))?;
       // TODO: Return an error instead of panicking.
-      assert!(
-          footer.data_type.is_supported::<T>(),
-          "Format of expected type {:?} does not support {:?}.",
-          footer.data_type,
-          std::any::type_name::<T>(),
-      );
+      if !footer.data_type.is_supported::<T>() {
+          return Err(UnsupportedDataType {
+              expected: footer.data_type,
+              actual: std::any::type_name::<T>(),
+          }
+          .into());
+      }
 
       let mut iter_pages = footer.pages.into_iter().peekable();
       let iter = std::iter::from_fn(move || -> Option<Result<rle::Values<T>>> {
@@ -694,8 +730,8 @@ are:
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir="LR";
-      overview[label="[u8x9]:magic_Bytes|bincode:header|<pages>custom:pages|<footer>bincode:footer|u64:footer_size"];
-      footer[label="varint:pages_count|page_info_1|<page_info_2>page_info_2|...|page_info_n"];
+      overview[label="<pages>custom:pages|<footer>bincode:footer|u64:footer_size"];
+      footer[label="u8:pages_count|u8:use_rle|varint:pages_count|page_info_1|<page_info_2>page_info_2|...|page_info_n"];
       page_info[label="varint:file_offset|varint:values_count|varint:encoded_values_count"];
       overview:footer -> footer;
       footer:page_info_2 -> page_info;
@@ -703,7 +739,7 @@ are:
 #+END_SRC
 
 #+RESULTS:
-[[file:format-diagram-footer.png]]
+[[file:images/format-diagram-footer.png]]
 
 #+BEGIN_SRC rust :tangle src/lib.rs
   #[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
@@ -715,8 +751,11 @@ are:
 
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
   pub enum DataType {
-      Integer = 0,
-      String = 1,
+      UnsignedByte = 0,
+      SignedByte = 1,
+      UnsignedInteger = 2,
+      SignedInteger = 3,
+      String = 4,
   }
 
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
@@ -729,7 +768,13 @@ are:
 
 #+BEGIN_SRC rust :exports none :tangle src/lib.rs
   impl DataType {
-      const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
+      const ALL_DATA_TYPE: [DataType; 5] = [
+          DataType::UnsignedByte,
+          DataType::SignedByte,
+          DataType::UnsignedInteger,
+          DataType::SignedInteger,
+          DataType::String,
+      ];
 
       fn from_type<T: 'static>() -> Option<DataType> {
           DataType::ALL_DATA_TYPE
@@ -740,15 +785,18 @@ are:
       fn is_supported<T: 'static>(&self) -> bool {
           let type_id = TypeId::of::<T>();
           match self {
-              DataType::Integer => [
-                  TypeId::of::<i8>(),
-                  TypeId::of::<u8>(),
-                  TypeId::of::<i16>(),
+              DataType::UnsignedByte => TypeId::of::<u8>() == type_id,
+              DataType::SignedByte => TypeId::of::<i8>() == type_id,
+              DataType::UnsignedInteger => [
                   TypeId::of::<u16>(),
-                  TypeId::of::<i32>(),
                   TypeId::of::<u32>(),
-                  TypeId::of::<i64>(),
                   TypeId::of::<u64>(),
+              ]
+              .contains(&type_id),
+              DataType::SignedInteger => [
+                  TypeId::of::<i16>(),
+                  TypeId::of::<i32>(),
+                  TypeId::of::<i64>(),
               ]
               .contains(&type_id),
               DataType::String => {
@@ -758,7 +806,6 @@ are:
       }
   }
 #+END_SRC
-
 
 * Data Encoding
 :PROPERTIES:
@@ -788,22 +835,56 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 #+BEGIN_SRC rust :tangle src/encode.rs
   struct Encoding {
       pub encoded_values: Vec<u8>,
-      pub values_count: usize,
+      pub page_info: PageInfo,
   }
 
   fn encode_values_as_bincode<T: 'static + bincode::Encode>(
-      values: impl Iterator<Item = T>,
-  ) -> Result<Encoding> {
+      values: &mut impl Iterator<Item = T>,
+      file_offset: i64,
+      target_encoded_size: usize,
+      use_rle: bool,
+  ) -> Result<Encoding>
+  where
+      T: 'static + bincode::Encode + Eq,
+  {
       let mut encoded_values = Vec::new();
-      let mut values_count = 0;
-      for element in values {
-          bincode::encode_into_std_write(element, &mut encoded_values, BINCODE_DATA_CONFIG)?;
-          values_count += 1;
+      if use_rle {
+          let mut values_count = 0;
+          let mut encoded_values_count = 0;
+          for rle in rle::encode_iter(values) {
+              values_count += rle.run_length as usize;
+              encoded_values_count += 1;
+              bincode::encode_into_std_write(rle, &mut encoded_values, BINCODE_DATA_CONFIG)?;
+              if encoded_values.len() >= target_encoded_size {
+                  break;
+              }
+          }
+          Ok(Encoding {
+              encoded_values,
+              page_info: PageInfo {
+                  file_offset,
+                  values_count,
+                  encoded_values_count,
+              },
+          })
+      } else {
+          let mut values_count = 0;
+          for value in values {
+              values_count += 1;
+              bincode::encode_into_std_write(value, &mut encoded_values, BINCODE_DATA_CONFIG)?;
+              if encoded_values.len() >= target_encoded_size {
+                  break;
+              }
+          }
+          Ok(Encoding {
+              encoded_values,
+              page_info: PageInfo {
+                  file_offset,
+                  values_count,
+                  encoded_values_count: values_count,
+              },
+          })
       }
-      Ok(Encoding {
-          encoded_values,
-          values_count,
-      })
   }
 #+END_SRC
 
@@ -916,10 +997,10 @@ iterator of type ~rle::Values<T>~. It is then used to encode the run length
 encoded vector into bytes.
 
 #+BEGIN_SRC rust :tangle src/rle.rs
-  pub fn encode_iter<T: 'static + bincode::Encode + Eq>(
-      data: impl Iterator<Item = T>,
-  ) -> impl Iterator<Item = Values<T>> {
-      data.peekable().batching(|iter| -> Option<Values<T>> {
+  pub fn encode_iter<'a, T: 'a + bincode::Encode + Eq>(
+      data: impl 'a + Iterator<Item = T>,
+  ) -> impl 'a + Iterator<Item = Values<T>> {
+      data.peekable().batching(move |iter| -> Option<Values<T>> {
           let element = iter.next()?;
           let mut run_length = 1;
           while iter.next_if_eq(&element).is_some() {
@@ -933,32 +1014,31 @@ encoded vector into bytes.
   }
 #+END_SRC
 
+To decode a single ~rle::Values~ into multiple, the value is repeated a number
+of times equal to ~run_length~.
+
 #+BEGIN_SRC rust :tangle src/rle.rs
-  pub fn decode_rle_data<T: 'static + bincode::Decode>(
-      elements: usize,
-      r: &'_ mut impl Read,
-  ) -> impl '_ + Iterator<Item = Result<Values<T>>> {
-      let mut elements_left_to_read = elements;
-      std::iter::from_fn(move || {
-          if elements_left_to_read == 0 {
-              return None;
-          }
-          let rle_element: Values<T> =
-              match bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG) {
-                  Ok(e) => e,
-                  Err(err) => return Some(Err(err.into())),
-              };
-          if rle_element.run_length as usize > elements_left_to_read {
-              let actual_total = elements - elements_left_to_read + rle_element.run_length as usize;
-              let err = RleDecodeErr::NotEnoughValuesInReader {
-                  expected_total: elements,
-                  actual_total,
-              };
-              return Some(Err(err.into()));
-          }
-          elements_left_to_read -= rle_element.run_length as usize;
-          Some(Ok(rle_element))
-      })
+  impl<T> Values<T> {
+      pub fn repeated(&self) -> impl '_ + Iterator<Item = &'_ T> {
+          std::iter::repeat(&self.value).take(self.run_length as usize)
+      }
+  }
+#+END_SRC
+
+Note that decoding is not always required. Sometimes it is more optimal to deal
+directly with ~rle::Values~. Take the following example:
+
+#+BEGIN_SRC rust :tangle src/test_rle.rs
+  #[test]
+  fn test_repeated_sum_equal_to_multiplication() {
+      let rle_values = Values {
+          value: 3u64,
+          run_length: 5,
+      };
+      // Technically valid.
+      assert_eq!(rle_values.repeated().sum::<u64>(), 15,);
+      // More efficient.
+      assert_eq!(rle_values.value * rle_values.run_length, 15);
   }
 #+END_SRC
 

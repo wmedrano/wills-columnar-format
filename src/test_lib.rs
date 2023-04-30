@@ -1,6 +1,7 @@
 // [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:8]]
 use super::*;
 use itertools::assert_equal;
+use std::io::Cursor;
 // Dependencies:8 ends here
 
 // [[file:../wills-columnar-format.org::#APITests-vfh696o03tj0][Tests:1]]
@@ -11,9 +12,8 @@ where
     let data: Vec<T> = values.to_vec();
     let mut encoded_data = Vec::new();
     encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
-    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
     assert_equal(
-        decode_column::<T>(&mut encoded_data_cursor)
+        decode_column::<T>(Cursor::new(encoded_data))
             .unwrap()
             .map(Result::unwrap),
         [
@@ -67,7 +67,7 @@ fn test_encode_decode_integer() {
         .sum()
     );
 
-    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    let mut encoded_data_cursor = Cursor::new(encoded_data);
     assert_equal(
         decode_column::<i64>(&mut encoded_data_cursor)
             .unwrap()
@@ -132,7 +132,7 @@ fn test_encode_decode_string() {
         .sum()
     );
 
-    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    let mut encoded_data_cursor = Cursor::new(encoded_data);
     assert_equal(
         decode_column::<String>(&mut encoded_data_cursor)
             .unwrap()
@@ -172,7 +172,7 @@ fn test_encode_decode_string() {
 fn test_encode_decode_string_with_rle() {
     let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
     let mut encoded_data = Vec::new();
-    encode_column(data.into_iter(), &mut encoded_data, true).unwrap();
+    let footer = encode_column(data.into_iter(), &mut encoded_data, true).unwrap();
     assert_eq!(
         encoded_data.len(),
         [
@@ -193,10 +193,12 @@ fn test_encode_decode_string_with_rle() {
             8, // u64 footer_size
         ]
         .iter()
-        .sum()
+        .sum(),
+        "{:?}",
+        footer
     );
 
-    let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
+    let mut encoded_data_cursor = Cursor::new(encoded_data);
     assert_equal(
         decode_column::<String>(&mut encoded_data_cursor)
             .unwrap()
@@ -222,3 +224,35 @@ fn test_encode_decode_string_with_rle() {
     );
 }
 // Tests:5 ends here
+
+// [[file:../wills-columnar-format.org::#APITests-vfh696o03tj0][Tests:6]]
+#[test]
+fn encode_on_many_values_outputs_several_pages() {
+    let values = std::iter::repeat(-1i64).take(1_000_000);
+    let mut encoded_data = Vec::new();
+    let footer = encode_column(values, &mut encoded_data, false).unwrap();
+    assert!(footer.pages.len() > 1, "{:?}", footer);
+    assert_eq!(decode_footer(Cursor::new(&encoded_data)).unwrap(), footer);
+    assert_equal(
+        decode_column::<i64>(Cursor::new(&encoded_data))
+            .unwrap()
+            .map(Result::unwrap),
+        std::iter::repeat(rle::Values::single(-1i64)).take(1_000_000),
+    );
+}
+// Tests:6 ends here
+
+// [[file:../wills-columnar-format.org::#APITests-vfh696o03tj0][Tests:7]]
+#[test]
+fn decode_on_wrong_data_type_fails() {
+    // SignedInteger.
+    let values = std::iter::once(-1i64);
+    let mut encoded_data = Vec::new();
+    encode_column(values, &mut encoded_data, false).unwrap();
+
+    assert!(decode_column::<u64>(Cursor::new(&encoded_data)).is_err());
+    assert!(decode_column::<String>(Cursor::new(&encoded_data)).is_err());
+    assert!(decode_column::<i8>(Cursor::new(&encoded_data)).is_err());
+    assert!(decode_column::<u8>(Cursor::new(&encoded_data)).is_err());
+}
+// Tests:7 ends here

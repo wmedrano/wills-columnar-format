@@ -22,9 +22,9 @@ const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::sta
 // Dependencies:3 ends here
 
 // [[file:../wills-columnar-format.org::#APIEncoding-w0g696o03tj0][Encoding:1]]
-pub fn encode_column<Iter, T, W>(data: Iter, w: &mut W, use_rle: bool) -> Result<()>
+pub fn encode_column<Iter, T, W>(data: Iter, w: &mut W, use_rle: bool) -> Result<Footer>
 where
-    Iter: ExactSizeIterator + Iterator<Item = T>,
+    Iter: Iterator<Item = T>,
     T: 'static + bincode::Encode + Eq,
     W: Write,
 {
@@ -33,13 +33,18 @@ where
 // Encoding:1 ends here
 
 // [[file:../wills-columnar-format.org::#APIDecoding-npg696o03tj0][Decoding:1]]
-pub fn decode_column<T>(
-    r: &'_ mut (impl Read + Seek),
-) -> Result<impl '_ + Iterator<Item = Result<rle::Values<T>>>>
+pub fn decode_column<'a, T>(
+    r: impl 'a + Read + Seek,
+) -> Result<impl 'a + Iterator<Item = Result<rle::Values<T>>>>
 where
     T: 'static + bincode::Decode,
 {
     decode::decode_column_impl(r)
+}
+
+pub fn decode_footer(r: impl Read + Seek) -> Result<Footer> {
+    let mut r = r;
+    decode::decode_footer_impl(&mut r)
 }
 // Decoding:1 ends here
 
@@ -53,8 +58,11 @@ pub struct Footer {
 
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum DataType {
-    Integer = 0,
-    String = 1,
+    UnsignedByte = 0,
+    SignedByte = 1,
+    UnsignedInteger = 2,
+    SignedInteger = 3,
+    String = 4,
 }
 
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
@@ -67,7 +75,13 @@ pub struct PageInfo {
 
 // [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:3]]
 impl DataType {
-    const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
+    const ALL_DATA_TYPE: [DataType; 5] = [
+        DataType::UnsignedByte,
+        DataType::SignedByte,
+        DataType::UnsignedInteger,
+        DataType::SignedInteger,
+        DataType::String,
+    ];
 
     fn from_type<T: 'static>() -> Option<DataType> {
         DataType::ALL_DATA_TYPE
@@ -78,15 +92,18 @@ impl DataType {
     fn is_supported<T: 'static>(&self) -> bool {
         let type_id = TypeId::of::<T>();
         match self {
-            DataType::Integer => [
-                TypeId::of::<i8>(),
-                TypeId::of::<u8>(),
-                TypeId::of::<i16>(),
+            DataType::UnsignedByte => TypeId::of::<u8>() == type_id,
+            DataType::SignedByte => TypeId::of::<i8>() == type_id,
+            DataType::UnsignedInteger => [
                 TypeId::of::<u16>(),
-                TypeId::of::<i32>(),
                 TypeId::of::<u32>(),
-                TypeId::of::<i64>(),
                 TypeId::of::<u64>(),
+            ]
+            .contains(&type_id),
+            DataType::SignedInteger => [
+                TypeId::of::<i16>(),
+                TypeId::of::<i32>(),
+                TypeId::of::<i64>(),
             ]
             .contains(&type_id),
             DataType::String => {
