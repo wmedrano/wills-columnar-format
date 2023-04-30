@@ -1,7 +1,7 @@
-// [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:7]]
+// [[file:../wills-columnar-format.org::#IntroductionCargotoml-cqc696o03tj0][Dependencies:9]]
 use crate::rle::*;
 use itertools::assert_equal;
-// Dependencies:7 ends here
+// Dependencies:9 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncodingTests-xhn696o03tj0][Tests:1]]
 #[test]

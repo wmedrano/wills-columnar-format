@@ -44,11 +44,11 @@ To generate the Rust source code, run ~M-x org-babel-tangle~ for
 
 Building and testing relies on Cargo.
 
-#+begin_src shell
+#+BEGIN_SRC shell
   cargo build
   cargo test
   cargo test $FN_TO_TEST
-#+end_src
+#+END_SRC
 
 *** Emacs Utility Blocks
 :PROPERTIES:
@@ -57,20 +57,20 @@ Building and testing relies on Cargo.
 
 The following code snippets may be evaluated with =C-c C-c=.
 
-#+begin_src emacs-lisp :results silent
+#+BEGIN_SRC emacs-lisp :results silent
   ;; Execute blocks in this file without asking for confirmation.
   (setq-local org-confirm-babel-evaluate nil)
-#+end_src
+#+END_SRC
 
-#+begin_src emacs-lisp :results silent
+#+BEGIN_SRC emacs-lisp :results silent
   ;; Export the org file as a Hugo markdown post.
   (add-hook 'after-save-hook #'org-hugo-export-to-md 0 t)
-#+end_src
+#+END_SRC
 
-#+begin_src emacs-lisp :results silent
+#+BEGIN_SRC emacs-lisp :results silent
   ;; Automatically regenerate Rust code after editing this file.
   (add-hook 'after-save-hook #'org-babel-tangle 0 t)
-#+end_src
+#+END_SRC
 
 ** Dependencies
 :PROPERTIES:
@@ -80,23 +80,25 @@ The following code snippets may be evaluated with =C-c C-c=.
 Rust dependencies are automatically fetched with Cargo. This library depends on
 the following crates:
 
-#+begin_src toml :tangle Cargo.toml :exports none
+#+BEGIN_SRC toml :tangle Cargo.toml :exports none
   [package]
   name = "columnar-format"
   version = "0.1.0"
   edition = "2021"
   # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
   [dependencies]
-#+end_src
+#+END_SRC
 
-#+begin_src toml :tangle Cargo.toml
+#+BEGIN_SRC toml :tangle Cargo.toml
   # Note: Bincode v2 currently in release candidate. This should be bumped to 2.0
   # once Bincode v2 is released.
   bincode = "2.0.0-rc.3"
   itertools = "0.10"
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/lib.rs :exports none
+#+BEGIN_SRC rust :tangle src/lib.rs :exports none
+  mod decode;
+  mod encode;
   pub mod rle;
 
   #[cfg(test)]
@@ -114,9 +116,10 @@ the following crates:
 
   type Error = Box<dyn std::error::Error>;
   type Result<T> = std::result::Result<T, Error>;
-#+end_src
+  const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
+#+END_SRC
 
-#+begin_src rust :tangle src/rle.rs :exports none
+#+BEGIN_SRC rust :tangle src/rle.rs :exports none
   use crate::Result;
   use bincode::{Decode, Encode};
   use itertools::Itertools;
@@ -146,21 +149,33 @@ the following crates:
           }
       }
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_bincode.rs :exports none
+#+BEGIN_SRC rust :tangle src/decode.rs :exports none
+  use std::io::{Read, Seek};
+
+  use crate::{rle, Footer, Header, Result, BINCODE_DATA_CONFIG, MAGIC_BYTES, MAGIC_BYTES_LEN};
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/encode.rs :exports none
+  use std::io::Write;
+
+  use crate::{rle, DataType, Footer, Header, PageInfo, Result, BINCODE_DATA_CONFIG, MAGIC_BYTES};
+#+END_SRC
+
+#+BEGIN_SRC rust :tangle src/test_bincode.rs :exports none
   use crate::rle;
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs :exports none
+#+BEGIN_SRC rust :tangle src/test_lib.rs :exports none
   use super::*;
   use itertools::assert_equal;
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_rle.rs :exports none
+#+BEGIN_SRC rust :tangle src/test_rle.rs :exports none
   use crate::rle::*;
   use itertools::assert_equal;
-#+end_src
+#+END_SRC
 
 * Features
 :PROPERTIES:
@@ -209,16 +224,16 @@ Supports:
 ~encode_column~ encodes an iterator over items into Will's Columnar Format. If
 ~use_rle~ is true, then run length encoding will be used.
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/lib.rs
   pub fn encode_column<Iter, T, W>(data: Iter, w: &mut W, use_rle: bool) -> Result<()>
   where
       Iter: ExactSizeIterator + Iterator<Item = T>,
       T: 'static + bincode::Encode + Eq,
       W: Write,
   {
-      encode_column_impl(w, data, use_rle)
+      encode::encode_column_impl(w, data, use_rle)
   }
-#+end_src
+#+END_SRC
 
 ** Decoding
 :PROPERTIES:
@@ -228,16 +243,16 @@ Supports:
 ~decode_column~ decodes data from a byte stream into an iterator of
 ~Result<rle::Values<T>>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/lib.rs
   pub fn decode_column<T>(
       r: &'_ mut (impl Read + Seek),
   ) -> Result<impl '_ + Iterator<Item = Result<rle::Values<T>>>>
   where
       T: 'static + bincode::Decode,
   {
-      decode_column_impl(r)
+      decode::decode_column_impl(r)
   }
-#+end_src
+#+END_SRC
 
 ** Optimization Tips
 :PROPERTIES:
@@ -254,7 +269,7 @@ does not repeat, then it is strictly worse.
 
 Example where run length encoding yields benefits:
 
-#+begin_src dot :file images/rle-good-example.png :exports results
+#+BEGIN_SRC dot :file images/rle-good-example.png :exports results
   digraph RleGoodExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -263,7 +278,7 @@ Example where run length encoding yields benefits:
       rle[label="(a, 4)|(b, 3)|(a, 2)"];
       norle -> rle[label="Run Length\nEncode"];
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:rle-good-example.png]]
@@ -273,7 +288,7 @@ below, notice how both normal and run length encoding have the same number of
 values. run length encoding is actually strictly worse since it has to encode
 the value *and* the run length.
 
-#+begin_src dot :file images/rle-bad-example.png :exports results
+#+BEGIN_SRC dot :file images/rle-bad-example.png :exports results
   digraph RleBadExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -282,7 +297,7 @@ the value *and* the run length.
       rle[label="(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)|(a, 1)|(b, 1)"];
       norle -> rle[label="Run Length\nEncode"];
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:rle-bad-example.png]]
@@ -306,7 +321,7 @@ Encoding]] for technical details.
 :CUSTOM_ID: APITests-vfh696o03tj0
 :END:
 
-#+begin_src rust :tangle src/test_lib.rs
+#+BEGIN_SRC rust :tangle src/test_lib.rs
   #[test]
   fn test_encoding_prefixed_by_magic_bytes() {
       let data: Vec<i64> = vec![1, 2, 3, 4];
@@ -314,9 +329,9 @@ Encoding]] for technical details.
       encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
       assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs :exports none
+#+BEGIN_SRC rust :tangle src/test_lib.rs :exports none
   fn test_can_encode_and_decode_for_type<T>(values: [T; 2])
   where
       T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
@@ -342,9 +357,9 @@ Encoding]] for technical details.
           ],
       );
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs
+#+BEGIN_SRC rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_several() {
       test_can_encode_and_decode_for_type::<i8>([-1, -1]);
@@ -357,9 +372,9 @@ Encoding]] for technical details.
       test_can_encode_and_decode_for_type::<u64>([1, 2]);
       test_can_encode_and_decode_for_type::<String>(["a".to_string(), "b".to_string()]);
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs
+#+BEGIN_SRC rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_integer() {
       let data: Vec<i64> = vec![-1, 10, 10, 10, 11, 12, 12, 10];
@@ -423,9 +438,9 @@ Encoding]] for technical details.
           ],
       );
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs
+#+BEGIN_SRC rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_string() {
       let data: Vec<&'static str> = vec!["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -481,9 +496,9 @@ Encoding]] for technical details.
           ],
       );
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_lib.rs
+#+BEGIN_SRC rust :tangle src/test_lib.rs
   #[test]
   fn test_encode_decode_string_with_rle() {
       let data = ["foo", "foo", "foo", "bar", "baz", "foo"];
@@ -538,7 +553,7 @@ Encoding]] for technical details.
           ],
       );
   }
-#+end_src
+#+END_SRC
 
 * Format Specification
 :PROPERTIES:
@@ -550,20 +565,20 @@ Encoding]] for technical details.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-#+begin_src dot :file images/format-diagram.png :exports results
+#+BEGIN_SRC dot :file images/format-diagram.png :exports results
   digraph FormatOverview {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir="LR";
       overview[label="[u8x9]:magic_bytes|bincode:header|custom:pages|bincode:footer|u64_little_endian:footer_size"];
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:format-diagram.png]]
 
-#+begin_src rust :tangle src/lib.rs
-  fn encode_column_impl<T>(
+#+BEGIN_SRC rust :tangle src/encode.rs
+  pub fn encode_column_impl<T>(
       w: &mut impl Write,
       values_iter: impl ExactSizeIterator + Iterator<Item = T>,
       use_rle: bool,
@@ -604,12 +619,10 @@ Encoding]] for technical details.
       w.write(&footer_size.to_le_bytes())?;
       Ok(())
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/lib.rs :exports none
-  const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::standard();
-
-  fn decode_column_impl<T: 'static + bincode::Decode>(
+#+BEGIN_SRC rust :tangle src/decode.rs :exports none
+  pub fn decode_column_impl<T: 'static + bincode::Decode>(
       r: impl Read + Seek,
   ) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
       let mut r = r;
@@ -652,7 +665,7 @@ Encoding]] for technical details.
       });
       Ok(iter)
   }
-#+end_src
+#+END_SRC
 
 ** Magic Bytes
 :PROPERTIES:
@@ -661,7 +674,7 @@ Encoding]] for technical details.
 
 The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
-#+begin_src dot :file images/format-diagram-magicbytes.png :exports results
+#+BEGIN_SRC dot :file images/format-diagram-magicbytes.png :exports results
   digraph MagicBytes {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -670,15 +683,15 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
       magicbytes[label="w|m|e|d|r|a|n|o|0", colorscheme=reds3, fillcolor=1];
       overview:magicbytes->magicbytes;
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:format-diagram-magicbytes.png]]
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/lib.rs
   const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
   const MAGIC_BYTES_LEN: usize = 9;
-#+end_src
+#+END_SRC
 
 ** File Header
 :PROPERTIES:
@@ -687,7 +700,7 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
 The header contains a Bincode encoded struct.
 
-#+begin_src dot :file images/format-diagram-header.png :exports results
+#+BEGIN_SRC dot :file images/format-diagram-header.png :exports results
   digraph Header {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -696,12 +709,12 @@ The header contains a Bincode encoded struct.
       header[label="u8:data_type|u8:use_rle", colorscheme=reds3];
       overview:header -> header;
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:format-diagram-header.png]]
 
-#+begin_src rust :exports none :tangle src/lib.rs
+#+BEGIN_SRC rust :exports none :tangle src/lib.rs
   impl DataType {
       const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
 
@@ -737,9 +750,9 @@ The header contains a Bincode encoded struct.
           bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap()
       }
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/lib.rs
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
   pub struct Header {
       pub data_type: DataType,
@@ -751,7 +764,7 @@ The header contains a Bincode encoded struct.
       Integer = 0,
       String = 1,
   }
-#+end_src
+#+END_SRC
 
 ** Pages
 :PROPERTIES:
@@ -761,7 +774,7 @@ The header contains a Bincode encoded struct.
 Pages contain actual data for the column. Each page encodes elements using
 Bincode. The number of elements within the page are stored in the footer.
 
-#+begin_src dot :file images/format-diagram-pages.png :exports results
+#+BEGIN_SRC dot :file images/format-diagram-pages.png :exports results
   digraph Pages {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -772,7 +785,7 @@ Bincode. The number of elements within the page are stored in the footer.
       pages:page_3 -> page:element_3;
       page[label="bincode(element_1)|bincode(element_2)|<element_3>...|bincode(element_3)", colorscheme=reds3];
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:format-diagram-pages.png]]
@@ -793,7 +806,7 @@ The footer contains information about the pages. The details for pages are:
   run length encoding is used, then *encoded values count* will be =1=. However,
   if run length encoding is not used, then this will be =10=.
 
-#+begin_src dot :file images/format-diagram-footer.png :exports results
+#+BEGIN_SRC dot :file images/format-diagram-footer.png :exports results
   digraph Footer {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -804,12 +817,12 @@ The footer contains information about the pages. The details for pages are:
       overview:footer -> footer;
       footer:page_info_2 -> page_info;
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:format-diagram-footer.png]]
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/lib.rs
   #[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
   pub struct Footer {
       pub pages: Vec<PageInfo>,
@@ -821,7 +834,7 @@ The footer contains information about the pages. The details for pages are:
       pub values_count: usize,
       pub encoded_values_count: usize,
   }
-#+end_src
+#+END_SRC
 
 * Data Encoding
 :PROPERTIES:
@@ -836,19 +849,19 @@ The footer contains information about the pages. The details for pages are:
 The data consists of a sequence of encoded data. Encoding happens using the Rust
 [[https:github.com/bincode-org/bincode][Bincode]] package to encode/decode each data element.
 
-#+begin_src dot :file images/basic-encoding.png :exports results
+#+BEGIN_SRC dot :file images/basic-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir=LR;
       data[label="bincode(element_1)|bincode(element_2)|...|bincode(element_n)"];
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:basic-encoding.png]]
 
-#+begin_src rust :tangle src/lib.rs
+#+BEGIN_SRC rust :tangle src/encode.rs
   struct Encoding {
       pub encoded_values: Vec<u8>,
       pub values_count: usize,
@@ -868,21 +881,21 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
           values_count,
       })
   }
-#+end_src
+#+END_SRC
 
 *** Tests
 :PROPERTIES:
 :CUSTOM_ID: DataEncodingBasicEncodingTests-sfz7wx714tj0
 :END:
-#+begin_src rust :tangle src/test_bincode.rs :exports none
+#+BEGIN_SRC rust :tangle src/test_bincode.rs :exports none
   fn encoded_size<T: bincode::Encode>(element: T) -> usize {
       bincode::encode_to_vec(element, bincode::config::standard())
           .unwrap()
           .len()
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/test_bincode.rs
+#+BEGIN_SRC rust :tangle src/test_bincode.rs
   #[test]
   fn test_encoding_size() {
       // Small numbers are encoded efficiently.
@@ -923,7 +936,7 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
       assert_eq!(encoded_size::<&[u8]>(&[1u8, 2, 3]), 4);
       assert_eq!(encoded_size(vec![1u8, 2, 3]), 4);
   }
-#+end_src
+#+END_SRC
 
 #+name: run-length-encoding
 ** Run Length Encoding
@@ -938,7 +951,7 @@ tuple. ~(element, run_length)~ where ~element~ contains the data and the
 to determine if RLE has benefits is to test it in practice. That is to say, try
 using both RLE and no RLE to see which one has the smaller size.
 
-#+begin_src dot :file images/rle-encoding.png :exports results
+#+BEGIN_SRC dot :file images/rle-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -948,12 +961,12 @@ using both RLE and no RLE to see which one has the smaller size.
       no_rle -> rle[label="Run Length\nEncode"];
       rle -> decode_rle[label="Run Length\nDecode"]
   }
-#+end_src
+#+END_SRC
 
 #+RESULTS:
 [[file:images/rle-encoding.png]]
 
-#+begin_src rust :tangle src/rle.rs
+#+BEGIN_SRC rust :tangle src/rle.rs
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
   pub struct Values<T> {
       // The underlying element.
@@ -972,13 +985,13 @@ using both RLE and no RLE to see which one has the smaller size.
           }
       }
   }
-#+end_src
+#+END_SRC
 
 To encode an iterator of type ~T~ with RLE, it is first converted into an
 iterator of type ~rle::Values<T>~. It is then used to encode the run length
 encoded vector into bytes.
 
-#+begin_src rust :tangle src/rle.rs
+#+BEGIN_SRC rust :tangle src/rle.rs
   pub fn encode_iter<T: 'static + bincode::Encode + Eq>(
       data: impl Iterator<Item = T>,
   ) -> impl Iterator<Item = Values<T>> {
@@ -994,9 +1007,9 @@ encoded vector into bytes.
           })
       })
   }
-#+end_src
+#+END_SRC
 
-#+begin_src rust :tangle src/rle.rs
+#+BEGIN_SRC rust :tangle src/rle.rs
   pub fn decode_rle_data<T: 'static + bincode::Decode>(
       elements: usize,
       r: &'_ mut impl Read,
@@ -1023,14 +1036,14 @@ encoded vector into bytes.
           Some(Ok(rle_element))
       })
   }
-#+end_src
+#+END_SRC
 
 *** Tests
 :PROPERTIES:
 :CUSTOM_ID: DataEncodingRunLengthEncodingTests-xhn696o03tj0
 :END:
 
-#+begin_src rust :tangle src/test_rle.rs
+#+BEGIN_SRC rust :tangle src/test_rle.rs
   #[test]
   fn test_encode_data_without_values_produces_no_values() {
       let data: Vec<String> = vec![];
@@ -1072,7 +1085,7 @@ encoded vector into bytes.
           ],
       );
   }
-#+end_src
+#+END_SRC
 
 * Source Code
 :PROPERTIES:
