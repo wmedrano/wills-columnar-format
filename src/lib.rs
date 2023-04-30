@@ -32,7 +32,7 @@ where
 // [[file:../wills-columnar-format.org::#APIDecoding-npg696o03tj0][Decoding:1]]
 pub fn decode_column<T>(
     r: &'_ mut (impl Read + Seek),
-) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>>
+) -> Result<impl '_ + Iterator<Item = Result<rle::Values<T>>>>
 where
     T: 'static + bincode::Decode,
 {
@@ -43,13 +43,13 @@ where
 // [[file:../wills-columnar-format.org::#FormatSpecificationFormatOverview-j3k696o03tj0][Format Overview:2]]
 fn encode_column_impl<T>(
     w: &mut impl Write,
-    data: impl ExactSizeIterator + Iterator<Item = T>,
+    values_iter: impl ExactSizeIterator + Iterator<Item = T>,
     use_rle: bool,
 ) -> Result<()>
 where
     T: 'static + bincode::Encode + Eq,
 {
-    let elements = data.len();
+    let values = values_iter.len();
     let mut file_offset = w.write(MAGIC_BYTES)?;
     file_offset += bincode::encode_into_std_write(
         Header {
@@ -60,19 +60,20 @@ where
         BINCODE_DATA_CONFIG,
     )?;
     // TODO: Use multiple pages instead of writing to a single page.
-    let encoded_data = if use_rle {
-        let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
-        encode_elements_as_bincode(rle_data)?
+    let encoding = if use_rle {
+        let rle_data /*: impl Iterator<Item=rle::Values<T>>*/ = rle::encode_iter(values_iter);
+        encode_values_as_bincode(rle_data)?
     } else {
-        encode_elements_as_bincode(data)?
+        encode_values_as_bincode(values_iter)?
     };
-    file_offset += w.write(encoded_data.as_slice())?;
+    file_offset += w.write(encoding.encoded_values.as_slice())?;
     let page_offset = file_offset;
     let footer_size = bincode::encode_into_std_write(
         Footer {
             pages: vec![PageInfo {
                 file_offset: page_offset as i64,
-                element_count: elements,
+                values_count: values,
+                encoded_values_count: encoding.values_count,
             }],
         },
         w,
@@ -88,7 +89,7 @@ const BINCODE_DATA_CONFIG: bincode::config::Configuration = bincode::config::sta
 
 fn decode_column_impl<T: 'static + bincode::Decode>(
     r: impl Read + Seek,
-) -> Result<impl Iterator<Item = Result<rle::Element<T>>>> {
+) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
     let mut r = r;
     let mut magic_string = [0u8; MAGIC_BYTES_LEN];
     r.read_exact(&mut magic_string)?;
@@ -113,17 +114,17 @@ fn decode_column_impl<T: 'static + bincode::Decode>(
     r.seek(std::io::SeekFrom::Start(data_start))?;
 
     let mut iter_pages = footer.pages.into_iter().peekable();
-    let iter = std::iter::from_fn(move || -> Option<Result<rle::Element<T>>> {
+    let iter = std::iter::from_fn(move || -> Option<Result<rle::Values<T>>> {
         // TODO: Verify
-        while iter_pages.next_if(|p| p.element_count == 0).is_some() {}
+        while iter_pages.next_if(|p| p.values_count == 0).is_some() {}
         let page = iter_pages.peek_mut()?;
         let rle_element_or_err = if header.use_rle {
             bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)
         } else {
-            bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG).map(rle::Element::single)
+            bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG).map(rle::Values::single)
         };
         if let Ok(e) = &rle_element_or_err {
-            page.element_count -= e.run_length as usize;
+            page.values_count -= e.run_length as usize;
         }
         Some(rle_element_or_err.map_err(std::convert::Into::into))
     });
@@ -188,7 +189,7 @@ pub enum DataType {
 }
 // File Header:3 ends here
 
-// [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:1]]
+// [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:2]]
 #[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
 pub struct Footer {
     pub pages: Vec<PageInfo>,
@@ -197,18 +198,29 @@ pub struct Footer {
 #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
 pub struct PageInfo {
     pub file_offset: i64,
-    pub element_count: usize,
+    pub values_count: usize,
+    pub encoded_values_count: usize,
 }
-// File Footer:1 ends here
+// File Footer:2 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:2]]
-fn encode_elements_as_bincode<T: 'static + bincode::Encode>(
-    data: impl Iterator<Item = T>,
-) -> Result<Vec<u8>> {
-    let mut encoded = Vec::new();
-    for element in data {
-        bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG)?;
+struct Encoding {
+    pub encoded_values: Vec<u8>,
+    pub values_count: usize,
+}
+
+fn encode_values_as_bincode<T: 'static + bincode::Encode>(
+    values: impl Iterator<Item = T>,
+) -> Result<Encoding> {
+    let mut encoded_values = Vec::new();
+    let mut values_count = 0;
+    for element in values {
+        bincode::encode_into_std_write(element, &mut encoded_values, BINCODE_DATA_CONFIG)?;
+        values_count += 1;
     }
-    Ok(encoded)
+    Ok(Encoding {
+        encoded_values,
+        values_count,
+    })
 }
 // Basic Encoding:2 ends here

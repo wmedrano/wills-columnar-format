@@ -31,8 +31,8 @@ fn test_encoding_size() {
     assert_eq!(encoded_size(25564), 3);
     assert_eq!(encoded_size((1u64, 255u64)), 4);
     assert_eq!(
-        encoded_size(rle::Element {
-            element: 1u64,
+        encoded_size(rle::Values {
+            value: 1u64,
             run_length: 255
         }),
         4

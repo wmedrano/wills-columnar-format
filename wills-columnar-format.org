@@ -124,7 +124,7 @@ the following crates:
 
   #[derive(Clone, Debug, PartialEq)]
   enum RleDecodeErr {
-      NotEnoughElementsInReader {
+      NotEnoughValuesInReader {
           expected_total: usize,
           actual_total: usize,
       },
@@ -135,12 +135,12 @@ the following crates:
   impl std::fmt::Display for RleDecodeErr {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
           match self {
-              RleDecodeErr::NotEnoughElementsInReader {
+              RleDecodeErr::NotEnoughValuesInReader {
                   expected_total,
                   actual_total,
               } => write!(
                   f,
-                  "expected at least {} elements but only found {}",
+                  "expected at least {} values but only found {}",
                   expected_total, actual_total,
               ),
           }
@@ -226,12 +226,12 @@ Supports:
 :END:
 
 ~decode_column~ decodes data from a byte stream into an iterator of
-~Result<rle::Element<T>>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
+~Result<rle::Values<T>>~. See [[id:DataEncodingRunLengthEncoding-0vm696o03tj0][Run Length Encoding]].
 
 #+begin_src rust :tangle src/lib.rs
   pub fn decode_column<T>(
       r: &'_ mut (impl Read + Seek),
-  ) -> Result<impl '_ + Iterator<Item = Result<rle::Element<T>>>>
+  ) -> Result<impl '_ + Iterator<Item = Result<rle::Values<T>>>>
   where
       T: 'static + bincode::Decode,
   {
@@ -254,7 +254,7 @@ does not repeat, then it is strictly worse.
 
 Example where run length encoding yields benefits:
 
-#+begin_src dot :file rle-good-example.png :exports results
+#+begin_src dot :file images/rle-good-example.png :exports results
   digraph RleGoodExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -270,10 +270,10 @@ Example where run length encoding yields benefits:
 
 In the worst case when there are no runs, RLE is actually worse. In the example
 below, notice how both normal and run length encoding have the same number of
-elements. run length encoding is actually strictly worse since it has to encode
+values. run length encoding is actually strictly worse since it has to encode
 the value *and* the run length.
 
-#+begin_src dot :file rle-bad-example.png :exports results
+#+begin_src dot :file images/rle-bad-example.png :exports results
   digraph RleBadExample {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -317,11 +317,11 @@ Encoding]] for technical details.
 #+end_src
 
 #+begin_src rust :tangle src/test_lib.rs :exports none
-  fn test_can_encode_and_decode_for_type<T>(elements: [T; 2])
+  fn test_can_encode_and_decode_for_type<T>(values: [T; 2])
   where
       T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
   {
-      let data: Vec<T> = elements.to_vec();
+      let data: Vec<T> = values.to_vec();
       let mut encoded_data = Vec::new();
       encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
       assert_eq!(&encoded_data[0..9], b"wmedrano0");
@@ -331,12 +331,12 @@ Encoding]] for technical details.
               .unwrap()
               .map(Result::unwrap),
           [
-              rle::Element {
-                  element: elements[0].clone(),
+              rle::Values {
+                  value: values[0].clone(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: elements[1].clone(),
+              rle::Values {
+                  value: values[1].clone(),
                   run_length: 1,
               },
           ],
@@ -371,10 +371,11 @@ Encoding]] for technical details.
               9, // magic_bytes
               1, // u8 header:data_type
               1, // u8 header:use_rle
-              8, // data contains 8 elements of varint with size 1.
+              8, // data contains 8 values of varint with size 1.
               1, // varint footer:pages_count
               1, // varint footer:page1:file_offset
-              1, // varint footer:page1:element_count
+              1, // varint footer:page1:values_count
+              1, // varint footer:page1:encoded_values_count
               8, // u64 footer_size
           ]
           .iter()
@@ -387,36 +388,36 @@ Encoding]] for technical details.
               .unwrap()
               .map(Result::unwrap),
           [
-              rle::Element {
-                  element: -1,
+              rle::Values {
+                  value: -1,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 10,
+              rle::Values {
+                  value: 10,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 10,
+              rle::Values {
+                  value: 10,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 10,
+              rle::Values {
+                  value: 10,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 11,
+              rle::Values {
+                  value: 11,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 12,
+              rle::Values {
+                  value: 12,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 12,
+              rle::Values {
+                  value: 12,
                   run_length: 1,
               },
-              rle::Element {
-                  element: 10,
+              rle::Values {
+                  value: 10,
                   run_length: 1,
               },
           ],
@@ -436,10 +437,11 @@ Encoding]] for technical details.
               9,  // magic_bytes
               1,  // u8 header:data_type
               1,  // u8 header:use_rle
-              24, // data contains 6 elements of varint with size 4.
+              24, // data contains 6 values of varint with size 4.
               1,  // varint footer:pages_count
               1,  // varint footer:page1:file_offset
-              1,  // varint footer:page1:element_count
+              1,  // varint footer:page1:values_count
+              1,  // varint footer:page1:encoded_values_count
               8,  // u64 footer_size
           ]
           .iter()
@@ -452,28 +454,28 @@ Encoding]] for technical details.
               .unwrap()
               .map(Result::unwrap),
           [
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "bar".to_string(),
+              rle::Values {
+                  value: "bar".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "baz".to_string(),
+              rle::Values {
+                  value: "baz".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 1,
               },
           ],
@@ -502,8 +504,9 @@ Encoding]] for technical details.
               4, // page1:element3:rle_element string "foo" of encoding size 4.
               1, // page1:element3:rle_run_length varint of size 1.
               1, // varint footer:pages_count
-              1, // varint footer:page_1:file_offset
-              1, // varint footer:page_1:element_count
+              1, // varint footer:page1:file_offset
+              1, // varint footer:page1:values_count
+              1, // varint footer:page1:encoded_values_count
               8, // u64 footer_size
           ]
           .iter()
@@ -516,20 +519,20 @@ Encoding]] for technical details.
               .unwrap()
               .map(Result::unwrap),
           [
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 3,
               },
-              rle::Element {
-                  element: "bar".to_string(),
+              rle::Values {
+                  value: "bar".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "baz".to_string(),
+              rle::Values {
+                  value: "baz".to_string(),
                   run_length: 1,
               },
-              rle::Element {
-                  element: "foo".to_string(),
+              rle::Values {
+                  value: "foo".to_string(),
                   run_length: 1,
               },
           ],
@@ -547,7 +550,7 @@ Encoding]] for technical details.
 :CUSTOM_ID: FormatSpecificationFormatOverview-j3k696o03tj0
 :END:
 
-#+begin_src dot :file format-diagram.png :exports results
+#+begin_src dot :file images/format-diagram.png :exports results
   digraph FormatOverview {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -562,13 +565,13 @@ Encoding]] for technical details.
 #+begin_src rust :tangle src/lib.rs
   fn encode_column_impl<T>(
       w: &mut impl Write,
-      data: impl ExactSizeIterator + Iterator<Item = T>,
+      values_iter: impl ExactSizeIterator + Iterator<Item = T>,
       use_rle: bool,
   ) -> Result<()>
   where
       T: 'static + bincode::Encode + Eq,
   {
-      let elements = data.len();
+      let values = values_iter.len();
       let mut file_offset = w.write(MAGIC_BYTES)?;
       file_offset += bincode::encode_into_std_write(
           Header {
@@ -579,19 +582,20 @@ Encoding]] for technical details.
           BINCODE_DATA_CONFIG,
       )?;
       // TODO: Use multiple pages instead of writing to a single page.
-      let encoded_data = if use_rle {
-          let rle_data /*: impl Iterator<Item=rle::Element<T>>*/ = rle::encode_iter(data);
-          encode_elements_as_bincode(rle_data)?
+      let encoding = if use_rle {
+          let rle_data /*: impl Iterator<Item=rle::Values<T>>*/ = rle::encode_iter(values_iter);
+          encode_values_as_bincode(rle_data)?
       } else {
-          encode_elements_as_bincode(data)?
+          encode_values_as_bincode(values_iter)?
       };
-      file_offset += w.write(encoded_data.as_slice())?;
+      file_offset += w.write(encoding.encoded_values.as_slice())?;
       let page_offset = file_offset;
       let footer_size = bincode::encode_into_std_write(
           Footer {
               pages: vec![PageInfo {
                   file_offset: page_offset as i64,
-                  element_count: elements,
+                  values_count: values,
+                  encoded_values_count: encoding.values_count,
               }],
           },
           w,
@@ -607,7 +611,7 @@ Encoding]] for technical details.
 
   fn decode_column_impl<T: 'static + bincode::Decode>(
       r: impl Read + Seek,
-  ) -> Result<impl Iterator<Item = Result<rle::Element<T>>>> {
+  ) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
       let mut r = r;
       let mut magic_string = [0u8; MAGIC_BYTES_LEN];
       r.read_exact(&mut magic_string)?;
@@ -632,17 +636,17 @@ Encoding]] for technical details.
       r.seek(std::io::SeekFrom::Start(data_start))?;
 
       let mut iter_pages = footer.pages.into_iter().peekable();
-      let iter = std::iter::from_fn(move || -> Option<Result<rle::Element<T>>> {
+      let iter = std::iter::from_fn(move || -> Option<Result<rle::Values<T>>> {
           // TODO: Verify
-          while iter_pages.next_if(|p| p.element_count == 0).is_some() {}
+          while iter_pages.next_if(|p| p.values_count == 0).is_some() {}
           let page = iter_pages.peek_mut()?;
           let rle_element_or_err = if header.use_rle {
               bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)
           } else {
-              bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG).map(rle::Element::single)
+              bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG).map(rle::Values::single)
           };
           if let Ok(e) = &rle_element_or_err {
-              page.element_count -= e.run_length as usize;
+              page.values_count -= e.run_length as usize;
           }
           Some(rle_element_or_err.map_err(std::convert::Into::into))
       });
@@ -657,7 +661,7 @@ Encoding]] for technical details.
 
 The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
-#+begin_src dot :file format-diagram-magicbytes.png :exports results
+#+begin_src dot :file images/format-diagram-magicbytes.png :exports results
   digraph MagicBytes {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -683,7 +687,7 @@ The magic bytes are 9 bytes long with the contents being "wmedrano0".
 
 The header contains a Bincode encoded struct.
 
-#+begin_src dot :file format-diagram-header.png :exports results
+#+begin_src dot :file images/format-diagram-header.png :exports results
   digraph Header {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -757,7 +761,7 @@ The header contains a Bincode encoded struct.
 Pages contain actual data for the column. Each page encodes elements using
 Bincode. The number of elements within the page are stored in the footer.
 
-#+begin_src dot :file format-diagram-pages.png :exports results
+#+begin_src dot :file images/format-diagram-pages.png :exports results
   digraph Pages {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -778,21 +782,25 @@ Bincode. The number of elements within the page are stored in the footer.
 :CUSTOM_ID: FormatSpecificationFileFooter-nn404df05tj0
 :END:
 
-The footer contains information about the pages. The main details are:
+The footer contains information about the pages. The details for pages are:
 
-- =file_offset= - Where the page starts relative to position 0 in the file.
-- =element_count= - The number of elements stored within the page. This is the
+- *file_offset* - Where the page starts relative to position 0 in the file.
+- *values_count* - The number of values stored within the page. This is the
   sum of all the run_lengths for run length encoded columns. For example, the
   string ~"foo"~ repeated 10 times will count as 10 elements.
+- *encoded values count* - The number of values that were encoded. This does not
+  take into account run length. For example, if ~"foo"~ is repeated 10 times and
+  run length encoding is used, then *encoded values count* will be =1=. However,
+  if run length encoding is not used, then this will be =10=.
 
-#+begin_src dot :file format-diagram-footer.png :exports results
+#+begin_src dot :file images/format-diagram-footer.png :exports results
   digraph Footer {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir="LR";
       overview[label="[u8x9]:magic_Bytes|bincode:header|<pages>custom:pages|<footer>bincode:footer|u64:footer_size"];
       footer[label="varint:pages_count|page_info_1|<page_info_2>page_info_2|...|page_info_n"];
-      page_info[label="varint:file_offset|varint:element_count"];
+      page_info[label="varint:file_offset|varint:values_count|varint:encoded_values_count"];
       overview:footer -> footer;
       footer:page_info_2 -> page_info;
   }
@@ -810,7 +818,8 @@ The footer contains information about the pages. The main details are:
   #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
   pub struct PageInfo {
       pub file_offset: i64,
-      pub element_count: usize,
+      pub values_count: usize,
+      pub encoded_values_count: usize,
   }
 #+end_src
 
@@ -827,7 +836,7 @@ The footer contains information about the pages. The main details are:
 The data consists of a sequence of encoded data. Encoding happens using the Rust
 [[https:github.com/bincode-org/bincode][Bincode]] package to encode/decode each data element.
 
-#+begin_src dot :file basic-encoding.png :exports results
+#+begin_src dot :file images/basic-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -840,14 +849,24 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
 [[file:basic-encoding.png]]
 
 #+begin_src rust :tangle src/lib.rs
-  fn encode_elements_as_bincode<T: 'static + bincode::Encode>(
-      data: impl Iterator<Item = T>,
-  ) -> Result<Vec<u8>> {
-      let mut encoded = Vec::new();
-      for element in data {
-          bincode::encode_into_std_write(element, &mut encoded, BINCODE_DATA_CONFIG)?;
+  struct Encoding {
+      pub encoded_values: Vec<u8>,
+      pub values_count: usize,
+  }
+
+  fn encode_values_as_bincode<T: 'static + bincode::Encode>(
+      values: impl Iterator<Item = T>,
+  ) -> Result<Encoding> {
+      let mut encoded_values = Vec::new();
+      let mut values_count = 0;
+      for element in values {
+          bincode::encode_into_std_write(element, &mut encoded_values, BINCODE_DATA_CONFIG)?;
+          values_count += 1;
       }
-      Ok(encoded)
+      Ok(Encoding {
+          encoded_values,
+          values_count,
+      })
   }
 #+end_src
 
@@ -884,8 +903,8 @@ The data consists of a sequence of encoded data. Encoding happens using the Rust
       assert_eq!(encoded_size(25564), 3);
       assert_eq!(encoded_size((1u64, 255u64)), 4);
       assert_eq!(
-          encoded_size(rle::Element {
-              element: 1u64,
+          encoded_size(rle::Values {
+              value: 1u64,
               run_length: 255
           }),
           4
@@ -919,7 +938,7 @@ tuple. ~(element, run_length)~ where ~element~ contains the data and the
 to determine if RLE has benefits is to test it in practice. That is to say, try
 using both RLE and no RLE to see which one has the smaller size.
 
-#+begin_src dot :file rle-encoding.png :exports results
+#+begin_src dot :file images/rle-encoding.png :exports results
   digraph {
       bgcolor="transparent";
       node[colorscheme=paired10, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
@@ -932,23 +951,23 @@ using both RLE and no RLE to see which one has the smaller size.
 #+end_src
 
 #+RESULTS:
-[[file:rle-encoding.png]]
+[[file:images/rle-encoding.png]]
 
 #+begin_src rust :tangle src/rle.rs
   #[derive(Encode, Decode, Copy, Clone, PartialEq, Debug)]
-  pub struct Element<T> {
+  pub struct Values<T> {
       // The underlying element.
-      pub element: T,
+      pub value: T,
       // Run length is stored as a u64. We could try using a smaller datatype,
       // but Bincode uses "variable length encoding" for integers which is
       // efficient for smaller sizes.
       pub run_length: u64,
   }
 
-  impl<T> Element<T> {
+  impl<T> Values<T> {
       pub fn single(element: T) -> Self {
-          Element {
-              element,
+          Values {
+              value: element,
               run_length: 1,
           }
       }
@@ -956,21 +975,21 @@ using both RLE and no RLE to see which one has the smaller size.
 #+end_src
 
 To encode an iterator of type ~T~ with RLE, it is first converted into an
-iterator of type ~rle::Element<T>~. It is then used to encode the run length
+iterator of type ~rle::Values<T>~. It is then used to encode the run length
 encoded vector into bytes.
 
 #+begin_src rust :tangle src/rle.rs
   pub fn encode_iter<T: 'static + bincode::Encode + Eq>(
       data: impl Iterator<Item = T>,
-  ) -> impl Iterator<Item = Element<T>> {
-      data.peekable().batching(|iter| -> Option<Element<T>> {
+  ) -> impl Iterator<Item = Values<T>> {
+      data.peekable().batching(|iter| -> Option<Values<T>> {
           let element = iter.next()?;
           let mut run_length = 1;
           while iter.next_if_eq(&element).is_some() {
               run_length += 1;
           }
-          Some(Element {
-              element,
+          Some(Values {
+              value: element,
               run_length,
           })
       })
@@ -981,20 +1000,20 @@ encoded vector into bytes.
   pub fn decode_rle_data<T: 'static + bincode::Decode>(
       elements: usize,
       r: &'_ mut impl Read,
-  ) -> impl '_ + Iterator<Item = Result<Element<T>>> {
+  ) -> impl '_ + Iterator<Item = Result<Values<T>>> {
       let mut elements_left_to_read = elements;
       std::iter::from_fn(move || {
           if elements_left_to_read == 0 {
               return None;
           }
-          let rle_element: Element<T> =
+          let rle_element: Values<T> =
               match bincode::decode_from_std_read(r, crate::BINCODE_DATA_CONFIG) {
                   Ok(e) => e,
                   Err(err) => return Some(Err(err.into())),
               };
           if rle_element.run_length as usize > elements_left_to_read {
               let actual_total = elements - elements_left_to_read + rle_element.run_length as usize;
-              let err = RleDecodeErr::NotEnoughElementsInReader {
+              let err = RleDecodeErr::NotEnoughValuesInReader {
                   expected_total: elements,
                   actual_total,
               };
@@ -1013,13 +1032,13 @@ encoded vector into bytes.
 
 #+begin_src rust :tangle src/test_rle.rs
   #[test]
-  fn test_encode_data_without_elements_produces_no_elements() {
+  fn test_encode_data_without_values_produces_no_values() {
       let data: Vec<String> = vec![];
       assert_equal(encode_iter(data.into_iter()), []);
   }
 
   #[test]
-  fn test_encode_data_combines_repeated_elements() {
+  fn test_encode_data_combines_repeated_values() {
       let data = [
           "repeated-3",
           "repeated-3",
@@ -1034,21 +1053,21 @@ encoded vector into bytes.
       assert_equal(
           encode_iter(data.into_iter()),
           [
-              Element {
+              Values {
                   run_length: 3,
-                  element: "repeated-3",
+                  value: "repeated-3",
               },
-              Element {
+              Values {
                   run_length: 1,
-                  element: "no-repeat",
+                  value: "no-repeat",
               },
-              Element {
+              Values {
                   run_length: 2,
-                  element: "repeated-2",
+                  value: "repeated-2",
               },
-              Element {
+              Values {
                   run_length: 3,
-                  element: "repeated-3",
+                  value: "repeated-3",
               },
           ],
       );

@@ -14,11 +14,11 @@ fn test_encoding_prefixed_by_magic_bytes() {
 // Tests:1 ends here
 
 // [[file:../wills-columnar-format.org::#APITests-vfh696o03tj0][Tests:2]]
-fn test_can_encode_and_decode_for_type<T>(elements: [T; 2])
+fn test_can_encode_and_decode_for_type<T>(values: [T; 2])
 where
     T: 'static + Clone + Encode + Decode + Eq + std::fmt::Debug,
 {
-    let data: Vec<T> = elements.to_vec();
+    let data: Vec<T> = values.to_vec();
     let mut encoded_data = Vec::new();
     encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
     assert_eq!(&encoded_data[0..9], b"wmedrano0");
@@ -28,12 +28,12 @@ where
             .unwrap()
             .map(Result::unwrap),
         [
-            rle::Element {
-                element: elements[0].clone(),
+            rle::Values {
+                value: values[0].clone(),
                 run_length: 1,
             },
-            rle::Element {
-                element: elements[1].clone(),
+            rle::Values {
+                value: values[1].clone(),
                 run_length: 1,
             },
         ],
@@ -68,10 +68,11 @@ fn test_encode_decode_integer() {
             9, // magic_bytes
             1, // u8 header:data_type
             1, // u8 header:use_rle
-            8, // data contains 8 elements of varint with size 1.
+            8, // data contains 8 values of varint with size 1.
             1, // varint footer:pages_count
             1, // varint footer:page1:file_offset
-            1, // varint footer:page1:element_count
+            1, // varint footer:page1:values_count
+            1, // varint footer:page1:encoded_values_count
             8, // u64 footer_size
         ]
         .iter()
@@ -84,36 +85,36 @@ fn test_encode_decode_integer() {
             .unwrap()
             .map(Result::unwrap),
         [
-            rle::Element {
-                element: -1,
+            rle::Values {
+                value: -1,
                 run_length: 1,
             },
-            rle::Element {
-                element: 10,
+            rle::Values {
+                value: 10,
                 run_length: 1,
             },
-            rle::Element {
-                element: 10,
+            rle::Values {
+                value: 10,
                 run_length: 1,
             },
-            rle::Element {
-                element: 10,
+            rle::Values {
+                value: 10,
                 run_length: 1,
             },
-            rle::Element {
-                element: 11,
+            rle::Values {
+                value: 11,
                 run_length: 1,
             },
-            rle::Element {
-                element: 12,
+            rle::Values {
+                value: 12,
                 run_length: 1,
             },
-            rle::Element {
-                element: 12,
+            rle::Values {
+                value: 12,
                 run_length: 1,
             },
-            rle::Element {
-                element: 10,
+            rle::Values {
+                value: 10,
                 run_length: 1,
             },
         ],
@@ -133,10 +134,11 @@ fn test_encode_decode_string() {
             9,  // magic_bytes
             1,  // u8 header:data_type
             1,  // u8 header:use_rle
-            24, // data contains 8 elements of varint with size 1.
+            24, // data contains 6 values of varint with size 4.
             1,  // varint footer:pages_count
             1,  // varint footer:page1:file_offset
-            1,  // varint footer:page1:element_count
+            1,  // varint footer:page1:values_count
+            1,  // varint footer:page1:encoded_values_count
             8,  // u64 footer_size
         ]
         .iter()
@@ -149,28 +151,28 @@ fn test_encode_decode_string() {
             .unwrap()
             .map(Result::unwrap),
         [
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "bar".to_string(),
+            rle::Values {
+                value: "bar".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "baz".to_string(),
+            rle::Values {
+                value: "baz".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 1,
             },
         ],
@@ -199,8 +201,9 @@ fn test_encode_decode_string_with_rle() {
             4, // page1:element3:rle_element string "foo" of encoding size 4.
             1, // page1:element3:rle_run_length varint of size 1.
             1, // varint footer:pages_count
-            1, // varint footer:page_1:file_offset
-            1, // varint footer:page_1:element_count
+            1, // varint footer:page1:file_offset
+            1, // varint footer:page1:values_count
+            1, // varint footer:page1:encoded_values_count
             8, // u64 footer_size
         ]
         .iter()
@@ -213,20 +216,20 @@ fn test_encode_decode_string_with_rle() {
             .unwrap()
             .map(Result::unwrap),
         [
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 3,
             },
-            rle::Element {
-                element: "bar".to_string(),
+            rle::Values {
+                value: "bar".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "baz".to_string(),
+            rle::Values {
+                value: "baz".to_string(),
                 run_length: 1,
             },
-            rle::Element {
-                element: "foo".to_string(),
+            rle::Values {
+                value: "foo".to_string(),
                 run_length: 1,
             },
         ],

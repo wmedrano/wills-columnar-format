@@ -5,13 +5,13 @@ use itertools::assert_equal;
 
 // [[file:../wills-columnar-format.org::#DataEncodingRunLengthEncodingTests-xhn696o03tj0][Tests:1]]
 #[test]
-fn test_encode_data_without_elements_produces_no_elements() {
+fn test_encode_data_without_values_produces_no_values() {
     let data: Vec<String> = vec![];
     assert_equal(encode_iter(data.into_iter()), []);
 }
 
 #[test]
-fn test_encode_data_combines_repeated_elements() {
+fn test_encode_data_combines_repeated_values() {
     let data = [
         "repeated-3",
         "repeated-3",
@@ -26,21 +26,21 @@ fn test_encode_data_combines_repeated_elements() {
     assert_equal(
         encode_iter(data.into_iter()),
         [
-            Element {
+            Values {
                 run_length: 3,
-                element: "repeated-3",
+                value: "repeated-3",
             },
-            Element {
+            Values {
                 run_length: 1,
-                element: "no-repeat",
+                value: "no-repeat",
             },
-            Element {
+            Values {
                 run_length: 2,
-                element: "repeated-2",
+                value: "repeated-2",
             },
-            Element {
+            Values {
                 run_length: 3,
-                element: "repeated-3",
+                value: "repeated-3",
             },
         ],
     );
