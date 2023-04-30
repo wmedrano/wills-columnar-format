@@ -154,13 +154,13 @@ the following crates:
 #+BEGIN_SRC rust :tangle src/decode.rs :exports none
   use std::io::{Read, Seek};
 
-  use crate::{rle, Footer, Header, Result, BINCODE_DATA_CONFIG, MAGIC_BYTES, MAGIC_BYTES_LEN};
+  use crate::{rle, Footer, Result, BINCODE_DATA_CONFIG};
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/encode.rs :exports none
   use std::io::Write;
 
-  use crate::{rle, DataType, Footer, Header, PageInfo, Result, BINCODE_DATA_CONFIG, MAGIC_BYTES};
+  use crate::{rle, DataType, Footer, PageInfo, Result, BINCODE_DATA_CONFIG};
 #+END_SRC
 
 #+BEGIN_SRC rust :tangle src/test_bincode.rs :exports none
@@ -321,16 +321,6 @@ Encoding]] for technical details.
 :CUSTOM_ID: APITests-vfh696o03tj0
 :END:
 
-#+BEGIN_SRC rust :tangle src/test_lib.rs
-  #[test]
-  fn test_encoding_prefixed_by_magic_bytes() {
-      let data: Vec<i64> = vec![1, 2, 3, 4];
-      let mut encoded_data = Vec::new();
-      encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
-      assert_eq!(&encoded_data[0..MAGIC_BYTES_LEN], b"wmedrano0");
-  }
-#+END_SRC
-
 #+BEGIN_SRC rust :tangle src/test_lib.rs :exports none
   fn test_can_encode_and_decode_for_type<T>(values: [T; 2])
   where
@@ -339,7 +329,6 @@ Encoding]] for technical details.
       let data: Vec<T> = values.to_vec();
       let mut encoded_data = Vec::new();
       encode_column(data.into_iter(), &mut encoded_data, false).unwrap();
-      assert_eq!(&encoded_data[0..9], b"wmedrano0");
       let mut encoded_data_cursor = std::io::Cursor::new(encoded_data);
       assert_equal(
           decode_column::<T>(&mut encoded_data_cursor)
@@ -383,10 +372,9 @@ Encoding]] for technical details.
       assert_eq!(
           encoded_data.len(),
           [
-              9, // magic_bytes
-              1, // u8 header:data_type
-              1, // u8 header:use_rle
               8, // data contains 8 values of varint with size 1.
+              1, // u8 footer:data_type
+              1, // u8 footer:use_rle
               1, // varint footer:pages_count
               1, // varint footer:page1:file_offset
               1, // varint footer:page1:values_count
@@ -449,10 +437,9 @@ Encoding]] for technical details.
       assert_eq!(
           encoded_data.len(),
           [
-              9,  // magic_bytes
-              1,  // u8 header:data_type
-              1,  // u8 header:use_rle
               24, // data contains 6 values of varint with size 4.
+              1,  // u8 footer:data_type
+              1,  // u8 footer:use_rle
               1,  // varint footer:pages_count
               1,  // varint footer:page1:file_offset
               1,  // varint footer:page1:values_count
@@ -507,9 +494,6 @@ Encoding]] for technical details.
       assert_eq!(
           encoded_data.len(),
           [
-              9, // magic_bytes
-              1, // u8 header:data_type
-              1, // u8 header:use_rle
               4, // page1:element1:rle_element string "foo" of encoding size 4.
               1, // page1:element1:rle_run_length varint of size 1.
               4, // page1:element2:rle_element string "bar" of encoding size 4.
@@ -518,6 +502,8 @@ Encoding]] for technical details.
               1, // page1:element3:rle_run_length varint of size 1.
               4, // page1:element3:rle_element string "foo" of encoding size 4.
               1, // page1:element3:rle_run_length varint of size 1.
+              1, // u8 footer:data_type
+              1, // u8 footer:use_rle
               1, // varint footer:pages_count
               1, // varint footer:page1:file_offset
               1, // varint footer:page1:values_count
@@ -577,12 +563,12 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir="LR";
-      overview[label="[u8x9]:magic_bytes|bincode:header|custom:pages|bincode:footer|u64_little_endian:footer_size"];
+      overview[label="custom:page_1|custom:page_2|..|custom:page_n|bincode:footer|u64_little_endian:footer_size"];
   }
 #+END_SRC
 
 #+RESULTS:
-[[file:format-diagram.png]]
+[[file:images/format-diagram.png]]
 
 #+BEGIN_SRC rust :tangle src/encode.rs
   pub fn encode_column_impl<T>(
@@ -594,15 +580,8 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
       T: 'static + bincode::Encode + Eq,
   {
       let values = values_iter.len();
-      let mut file_offset = w.write(MAGIC_BYTES)?;
-      file_offset += bincode::encode_into_std_write(
-          Header {
-              data_type: DataType::from_type::<T>().unwrap(),
-              use_rle,
-          },
-          w,
-          BINCODE_DATA_CONFIG,
-      )?;
+      // TODO: Return an error.
+      let data_type = DataType::from_type::<T>().unwrap();
       // TODO: Use multiple pages instead of writing to a single page.
       let encoding = if use_rle {
           let rle_data /*: impl Iterator<Item=rle::Values<T>>*/ = rle::encode_iter(values_iter);
@@ -610,12 +589,13 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
       } else {
           encode_values_as_bincode(values_iter)?
       };
-      file_offset += w.write(encoding.encoded_values.as_slice())?;
-      let page_offset = file_offset;
+      w.write(encoding.encoded_values.as_slice())?;
       let footer_size = bincode::encode_into_std_write(
           Footer {
+              data_type,
+              use_rle,
               pages: vec![PageInfo {
-                  file_offset: page_offset as i64,
+                  file_offset: 0,
                   values_count: values,
                   encoded_values_count: encoding.values_count,
               }],
@@ -633,34 +613,27 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
       r: impl Read + Seek,
   ) -> Result<impl Iterator<Item = Result<rle::Values<T>>>> {
       let mut r = r;
-      let mut magic_string = [0u8; MAGIC_BYTES_LEN];
-      r.read_exact(&mut magic_string)?;
-      assert_eq!(
-          &magic_string, MAGIC_BYTES,
-          "Expected magic string {:?}.",
-          MAGIC_BYTES
-      );
-      let header = Header::decode(&mut r);
       let data_start = r.stream_position()?;
-      assert!(
-          header.data_type.is_supported::<T>(),
-          "Format of expected type {:?} does not support {:?}.",
-          header.data_type,
-          std::any::type_name::<T>(),
-      );
       r.seek(std::io::SeekFrom::End(-8))?;
       let footer_length_bytes = bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)?;
       let footer_length = u64::from_le_bytes(footer_length_bytes);
       r.seek(std::io::SeekFrom::End(-8 - footer_length as i64))?;
       let footer: Footer = bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)?;
       r.seek(std::io::SeekFrom::Start(data_start))?;
+      // TODO: Return an error instead of panicking.
+      assert!(
+          footer.data_type.is_supported::<T>(),
+          "Format of expected type {:?} does not support {:?}.",
+          footer.data_type,
+          std::any::type_name::<T>(),
+      );
 
       let mut iter_pages = footer.pages.into_iter().peekable();
       let iter = std::iter::from_fn(move || -> Option<Result<rle::Values<T>>> {
           // TODO: Verify
           while iter_pages.next_if(|p| p.values_count == 0).is_some() {}
           let page = iter_pages.peek_mut()?;
-          let rle_element_or_err = if header.use_rle {
+          let rle_element_or_err = if footer.use_rle {
               bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG)
           } else {
               bincode::decode_from_std_read(&mut r, BINCODE_DATA_CONFIG).map(rle::Values::single)
@@ -674,52 +647,85 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
   }
 #+END_SRC
 
-** Magic Bytes
+** Pages
 :PROPERTIES:
-:CUSTOM_ID: FormatSpecificationMagicBytes-iyl7tna13tj0
+:CUSTOM_ID: FormatSpecificationPages-b9u4ccg05tj0
 :END:
 
-The magic bytes are 9 bytes long with the contents being "wmedrano0".
+Pages contain actual data for the column. Each page encodes elements using
+Bincode. The number of elements within the page are stored in the footer.
 
-#+BEGIN_SRC dot :file images/format-diagram-magicbytes.png :exports results
-  digraph MagicBytes {
+#+BEGIN_SRC dot :file images/format-diagram-pages.png :exports results
+  digraph Pages {
       bgcolor="transparent";
       node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
       rankdir="LR";
-      overview[label="<magicbytes>[u8x9]:magic_Bytes|bincode:header|custom:pages|bincode:footer|u64:footer_size"];
-      magicbytes[label="w|m|e|d|r|a|n|o|0", colorscheme=reds3, fillcolor=1];
-      overview:magicbytes->magicbytes;
+      overview[label="<pages>custom:pages|bincode:footer|u64:footer_size"];
+      overview:pages -> pages;
+      pages[label="page 1|page 2|<page_3>page ...|page n", colorscheme=reds3, fillcolor=2];
+      pages:page_3 -> page:values_3;
+      page[label="bincode(values_1)|bincode(values_2)|<values_3>...|bincode(values_3)", colorscheme=reds3];
   }
 #+END_SRC
 
 #+RESULTS:
-[[file:format-diagram-magicbytes.png]]
+[[file:images/format-diagram-pages.png]]
+
+** File Footer
+:PROPERTIES:
+:CUSTOM_ID: FormatSpecificationFileFooter-nn404df05tj0
+:END:
+
+The footer contains information about the columns like the data type, if run
+length encoding is enabled and information for each page. The details for pages
+are:
+
+- *file_offset* - Where the page starts relative to position 0 in the file.
+- *values_count* - The number of values stored within the page. This is the
+  sum of all the run_lengths for run length encoded columns. For example, the
+  string ~"foo"~ repeated 10 times will count as 10 elements.
+- *encoded values count* - The number of values that were encoded. This does not
+  take into account run length. For example, if ~"foo"~ is repeated 10 times and
+  run length encoding is used, then *encoded values count* will be =1=. However,
+  if run length encoding is not used, then this will be =10=.
+
+#+BEGIN_SRC dot :file images/format-diagram-footer.png :exports results
+  digraph Footer {
+      bgcolor="transparent";
+      node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
+      rankdir="LR";
+      overview[label="[u8x9]:magic_Bytes|bincode:header|<pages>custom:pages|<footer>bincode:footer|u64:footer_size"];
+      footer[label="varint:pages_count|page_info_1|<page_info_2>page_info_2|...|page_info_n"];
+      page_info[label="varint:file_offset|varint:values_count|varint:encoded_values_count"];
+      overview:footer -> footer;
+      footer:page_info_2 -> page_info;
+  }
+#+END_SRC
+
+#+RESULTS:
+[[file:format-diagram-footer.png]]
 
 #+BEGIN_SRC rust :tangle src/lib.rs
-  const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
-  const MAGIC_BYTES_LEN: usize = 9;
-#+END_SRC
+  #[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
+  pub struct Footer {
+      pub data_type: DataType,
+      pub use_rle: bool,
+      pub pages: Vec<PageInfo>,
+  }
 
-** File Header
-:PROPERTIES:
-:CUSTOM_ID: FormatSpecificationHeader-3tk696o03tj0
-:END:
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub enum DataType {
+      Integer = 0,
+      String = 1,
+  }
 
-The header contains a Bincode encoded struct.
-
-#+BEGIN_SRC dot :file images/format-diagram-header.png :exports results
-  digraph Header {
-      bgcolor="transparent";
-      node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
-      rankdir="LR";
-      overview[label="[u8x9]:magic_Bytes|<header>bincode:header|custom:pages|bincode:footer|u64:footer_size"];
-      header[label="u8:data_type|u8:use_rle", colorscheme=reds3];
-      overview:header -> header;
+  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+  pub struct PageInfo {
+      pub file_offset: i64,
+      pub values_count: usize,
+      pub encoded_values_count: usize,
   }
 #+END_SRC
-
-#+RESULTS:
-[[file:format-diagram-header.png]]
 
 #+BEGIN_SRC rust :exports none :tangle src/lib.rs
   impl DataType {
@@ -751,97 +757,8 @@ The header contains a Bincode encoded struct.
           }
       }
   }
-
-  impl Header {
-      fn decode(r: &mut impl std::io::Read) -> Self {
-          bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap()
-      }
-  }
 #+END_SRC
 
-#+BEGIN_SRC rust :tangle src/lib.rs
-  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-  pub struct Header {
-      pub data_type: DataType,
-      pub use_rle: bool,
-  }
-
-  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-  pub enum DataType {
-      Integer = 0,
-      String = 1,
-  }
-#+END_SRC
-
-** Pages
-:PROPERTIES:
-:CUSTOM_ID: FormatSpecificationPages-b9u4ccg05tj0
-:END:
-
-Pages contain actual data for the column. Each page encodes elements using
-Bincode. The number of elements within the page are stored in the footer.
-
-#+BEGIN_SRC dot :file images/format-diagram-pages.png :exports results
-  digraph Pages {
-      bgcolor="transparent";
-      node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
-      rankdir="LR";
-      overview[label="[u8x9]:magic_Bytes|bincode:header|<pages>custom:pages|bincode:footer|u64:footer_size"];
-      overview:pages -> pages;
-      pages[label="page 1|page 2|<page_3>page ...|page n", colorscheme=reds3, fillcolor=2];
-      pages:page_3 -> page:element_3;
-      page[label="bincode(element_1)|bincode(element_2)|<element_3>...|bincode(element_3)", colorscheme=reds3];
-  }
-#+END_SRC
-
-#+RESULTS:
-[[file:format-diagram-pages.png]]
-
-** File Footer
-:PROPERTIES:
-:CUSTOM_ID: FormatSpecificationFileFooter-nn404df05tj0
-:END:
-
-The footer contains information about the pages. The details for pages are:
-
-- *file_offset* - Where the page starts relative to position 0 in the file.
-- *values_count* - The number of values stored within the page. This is the
-  sum of all the run_lengths for run length encoded columns. For example, the
-  string ~"foo"~ repeated 10 times will count as 10 elements.
-- *encoded values count* - The number of values that were encoded. This does not
-  take into account run length. For example, if ~"foo"~ is repeated 10 times and
-  run length encoding is used, then *encoded values count* will be =1=. However,
-  if run length encoding is not used, then this will be =10=.
-
-#+BEGIN_SRC dot :file images/format-diagram-footer.png :exports results
-  digraph Footer {
-      bgcolor="transparent";
-      node[colorscheme=blues3, fillcolor=1, color=black, style=filled, shape=record, fontname="fira code"];
-      rankdir="LR";
-      overview[label="[u8x9]:magic_Bytes|bincode:header|<pages>custom:pages|<footer>bincode:footer|u64:footer_size"];
-      footer[label="varint:pages_count|page_info_1|<page_info_2>page_info_2|...|page_info_n"];
-      page_info[label="varint:file_offset|varint:values_count|varint:encoded_values_count"];
-      overview:footer -> footer;
-      footer:page_info_2 -> page_info;
-  }
-#+END_SRC
-
-#+RESULTS:
-[[file:format-diagram-footer.png]]
-
-#+BEGIN_SRC rust :tangle src/lib.rs
-  #[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
-  pub struct Footer {
-      pub pages: Vec<PageInfo>,
-  }
-
-  #[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-  pub struct PageInfo {
-      pub file_offset: i64,
-      pub values_count: usize,
-      pub encoded_values_count: usize,
-  }
-#+END_SRC
 
 * Data Encoding
 :PROPERTIES:

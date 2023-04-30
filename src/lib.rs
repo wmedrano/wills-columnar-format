@@ -43,12 +43,29 @@ where
 }
 // Decoding:1 ends here
 
-// [[file:../wills-columnar-format.org::#FormatSpecificationMagicBytes-iyl7tna13tj0][Magic Bytes:2]]
-const MAGIC_BYTES: &[u8; MAGIC_BYTES_LEN] = b"wmedrano0";
-const MAGIC_BYTES_LEN: usize = 9;
-// Magic Bytes:2 ends here
+// [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:2]]
+#[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
+pub struct Footer {
+    pub data_type: DataType,
+    pub use_rle: bool,
+    pub pages: Vec<PageInfo>,
+}
 
-// [[file:../wills-columnar-format.org::#FormatSpecificationHeader-3tk696o03tj0][File Header:2]]
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum DataType {
+    Integer = 0,
+    String = 1,
+}
+
+#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
+pub struct PageInfo {
+    pub file_offset: i64,
+    pub values_count: usize,
+    pub encoded_values_count: usize,
+}
+// File Footer:2 ends here
+
+// [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:3]]
 impl DataType {
     const ALL_DATA_TYPE: [DataType; 2] = [DataType::Integer, DataType::String];
 
@@ -78,38 +95,4 @@ impl DataType {
         }
     }
 }
-
-impl Header {
-    fn decode(r: &mut impl std::io::Read) -> Self {
-        bincode::decode_from_std_read(r, BINCODE_DATA_CONFIG).unwrap()
-    }
-}
-// File Header:2 ends here
-
-// [[file:../wills-columnar-format.org::#FormatSpecificationHeader-3tk696o03tj0][File Header:3]]
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub struct Header {
-    pub data_type: DataType,
-    pub use_rle: bool,
-}
-
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub enum DataType {
-    Integer = 0,
-    String = 1,
-}
-// File Header:3 ends here
-
-// [[file:../wills-columnar-format.org::#FormatSpecificationFileFooter-nn404df05tj0][File Footer:2]]
-#[derive(Encode, Decode, PartialEq, Eq, Clone, Debug)]
-pub struct Footer {
-    pub pages: Vec<PageInfo>,
-}
-
-#[derive(Encode, Decode, PartialEq, Eq, Copy, Clone, Debug)]
-pub struct PageInfo {
-    pub file_offset: i64,
-    pub values_count: usize,
-    pub encoded_values_count: usize,
-}
-// File Footer:2 ends here
+// File Footer:3 ends here
