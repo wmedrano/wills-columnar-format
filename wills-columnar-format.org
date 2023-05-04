@@ -616,9 +616,8 @@ Perhaps look to [[https://ursalabs.org/blog/2019-10-columnar-perf/][Wes McKinney
       let mut pages = Vec::new();
       let mut file_offset = 0;
       loop {
-          let target_encoding_size = 2048;
           let encoding =
-              encode_values_as_bincode(&mut values_iter, file_offset, target_encoding_size, use_rle)?;
+              encode_values_as_bincode(&mut values_iter, file_offset, MIN_TARGET_PAGE_SIZE, use_rle)?;
           if encoding.encoded_values.is_empty() {
               break;
           } else {
@@ -702,6 +701,13 @@ Bincode. The number of elements within the page are stored in the footer.
       pages:page_3 -> page:values_3;
       page[label="bincode(values_1)|bincode(values_2)|<values_3>...|bincode(values_3)", colorscheme=reds3];
   }
+#+END_SRC
+
+The size of each page is currently not configurable. However, the encoder aims
+for a particular minimum page sizes.
+
+#+BEGIN_SRC rust :tangle src/encode.rs
+  const MIN_TARGET_PAGE_SIZE: usize = 2048;
 #+END_SRC
 
 #+RESULTS:

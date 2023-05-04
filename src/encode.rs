@@ -20,9 +20,8 @@ where
     let mut pages = Vec::new();
     let mut file_offset = 0;
     loop {
-        let target_encoding_size = 2048;
         let encoding =
-            encode_values_as_bincode(&mut values_iter, file_offset, target_encoding_size, use_rle)?;
+            encode_values_as_bincode(&mut values_iter, file_offset, MIN_TARGET_PAGE_SIZE, use_rle)?;
         if encoding.encoded_values.is_empty() {
             break;
         } else {
@@ -40,6 +39,10 @@ where
     Ok(footer)
 }
 // Format Overview:2 ends here
+
+// [[file:../wills-columnar-format.org::#FormatSpecificationPages-b9u4ccg05tj0][Pages:2]]
+const MIN_TARGET_PAGE_SIZE: usize = 2048;
+// Pages:2 ends here
 
 // [[file:../wills-columnar-format.org::#DataEncodingBasicEncoding-e4m696o03tj0][Basic Encoding:2]]
 struct Encoding {
